@@ -13,6 +13,8 @@
 #include <mutex>
 #include <atomic>
 
+std::atomic<bool> run_pool;
+
 struct task {
     typedef void(task_func)(task*);
 
@@ -26,7 +28,7 @@ struct task {
     }
 
     void wait() {
-        while (!complete) {
+        while (!complete && run_pool) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
     }
@@ -40,9 +42,9 @@ struct task {
 
 std::mutex queue_mutex;
 std::queue<task*> task_pool;
-std::atomic<bool> run_pool;
 
 void runner() {
+    printf("Start thread\n");
     while (run_pool) {
         bool empty = false;
         task* _task = nullptr;
@@ -52,6 +54,7 @@ void runner() {
                 empty = true;
             } else {
                 _task = task_pool.front();
+                task_pool.pop();
             }
         }
 
@@ -60,13 +63,17 @@ void runner() {
             continue;
         }
 
+        printf("Run task\n");
+
         if (_task && !_task->complete) {
             _task->func(_task);
         }
+
+        printf("Done task\n");
     }
 }
 
-void max (task* t) {
+void sum(task* t) {
     int sum = 0;
     for (int i = 0; i < t->arg_count; i++) {
         sum += t->args[i];
@@ -87,27 +94,39 @@ void max(task* t) {
 }
 
 void run(int N) {
-    int max = 0;
-    int sum = 0;
-    int array[N];
+    int *array = new int[N];
 
     for (int i = 0; i < N; i++) {
         array[i] = i;
     }
 
-    task *max = new task((task::task_func)max, new int[N], N);
-    task *sum = new task((task::task_func)&sum, new int[N], N);
+    task *task_max = new task((task::task_func*)&max, array, N);
+    task *task_sum = new task((task::task_func*)&sum, array, N);
 
     {  
         std::lock_guard<std::mutex> lock(queue_mutex);
-        task_pool.push(max);
-        task_pool.push(sum);
+        printf("Push tasks\n");
+        task_pool.push(task_max);
+        task_pool.push(task_sum);
     }
 
-    delete max;
-    delete sum;
+    printf("Wait for tasks\n");
+    task_max->wait();
+    task_sum->wait();
+
+    printf("N: %i, max: %i, sum: %i\n", N, task_max->ret, task_sum->ret);
+
+    delete task_max;
+    delete task_sum;
 }
 
 int main() {
+    run_pool = true;
+    std::thread a(runner), b(runner);
 
+    run(1000);
+
+    run_pool = false;
+    a.join();
+    b.join();
 }
