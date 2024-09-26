@@ -86,15 +86,82 @@ void displayGradient(TB *target) {
     }
 }
 
+struct screen_object {
+    screen_object(sizef _size, bool _active = false) : size(_size), active(_active) {}
+    screen_object(bool _active = false) : screen_object({0.,0.,1.,1.}, _active) {}
+    bool active;
+    sizef size;
+    virtual void display(i_buffer_sink_dim<cpix_wide> *sink) = 0;
+};
+
+template<int sliderCount>
+struct sliders_object : screen_object {
+    sliders_object(sizef _size, bool _active = false) : screen_object(_size,_active) {
+        setSliders(VALUE, 0);
+        setSliders(MIN, -1);
+        setSliders(MAX, 1);
+        setSliders(STEP, 0.1);
+    }
+
+    enum prop {
+        VALUE = 0,
+        MIN,
+        MAX,
+        STEP,
+        PROP_COUNT
+    };
+
+    float sliders[PROP_COUNT][sliderCount];
+
+    void setSlider(int slider, prop p, float value) {
+        sliders[p][slider] = value;
+    }
+
+    void setSliders(prop p, float value) {
+        for (int i = 0; i < sliderCount; i++)
+            sliders[p][i] = value;
+    }
+
+    float getSlider(int slider, prop p) {
+        return sliders[p][slider];
+    }
+
+    void display(i_buffer_sink_dim<cpix_wide> *sink) override {
+        for (int i = 0; i < sliderCount; i++) {
+            con_norm xsize = size.width / sliderCount;
+            con_norm ysize = size.height;
+            con_norm xpos = xsize * i;
+            con_norm ypos = 0;
+            _2dsize<con_norm> _norm_rel_pos = 
+                                   {xpos, ypos};
+            auto _real_sink_size = sink->getDimensions();
+            _2d<con_norm> _norm_abs_pos = 
+                                   {size.x + _norm_rel_pos.x,
+                                    size.y + _norm_rel_pos.y};
+                                    
+
+            for (con_norm y = 0; y < ysize; y += sink->getSampleHeightStep()) {
+                //fprintf(stderr, "Slider %i: %f\n", i, getSlider(i, VALUE));
+                sink->writeSample(y + _norm_abs_pos.y, _norm_abs_pos.x, cpix_wide(L'|', 4));
+            }
+        }
+    }
+};
+
 int main() {
     auto key = con.readKeyAsync();
     image_target.make(500, 500);
     target.make(con.getDimensions());
+    sliders_object<6> sliders({0.25, 0.66, 0.5, 0.22});
     //characters = (wchar_t*)L" H#";
     //colormapper_init_table();
 
     while (key != 'q' && key != '\b') {
-        key = con.readKeyAsync() & 0xFF;
+        con_basic_key _key = con.readKeyAsync();
+        key = _key & 0xFF;
+        if (key) {
+            fprintf(stderr, "Raw: %i (%c) Key: %i (%c) \n", _key, _key, key, key);
+        }
 
         if (key-'1' > -1 && key-'1' < 4) {
             active_colors[key-'1'] = !active_colors[key-'1'];
@@ -108,6 +175,12 @@ int main() {
             fprintf(stderr, "Saved to %s\n", filename.c_str());
         }
 
+        if (key == 0x9) {
+            for (int i = 0; i < 4; i++)
+                active_colors[i] = true;
+            graphics_change = true;
+        }
+
         if (graphics_change) {
             graphics_change = false;
 
@@ -119,6 +192,8 @@ int main() {
 
             copyTo(target.buffer<cpix_wide>::sink(), con.sink_wcpix::sink());
         }
+
+        sliders.display(con.sink_wcpix::sink());
 
         con.sleep(10);
     }
