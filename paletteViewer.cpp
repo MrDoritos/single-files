@@ -3,6 +3,7 @@
 #include <concepts>
 #include <functional>
 #include <cstddef>
+#include <functional>
 
 #include "../console-2/autoconsole.h"
 #include "../console-2/buffers.h"
@@ -37,6 +38,7 @@ struct program {
     remap_func remap_rgb = 0;
     pixel remap_ramp(pixel&);
     pixel remap_comp(pixel&);
+    pixel remap_fun(pixel&);
     screen_handler *handler;
     sliders_object<slider_cnt> *sliders;
     pviewer_object *pviewer;
@@ -137,6 +139,41 @@ struct screen_object {
     virtual bool keyboard(con_basic_key key) { return false; }
 };
 
+template<typename iter>
+static void incr(iter &objects) {
+    int i = 0, c = 0, faa = -1, laa = -1, la = -1;
+    
+    for (auto *obj : objects) {
+        c = i;
+        i++;
+
+        if (obj->locked)
+            continue;
+
+        if (faa < 0)
+            faa = c;
+
+        if (obj->active)
+            la = c;
+        else {
+            laa = c;
+            if (la >= 0)
+                break;
+        }
+    }
+
+    if (laa == la || faa < 0 || laa < 0)
+        return;
+
+    if (la > -1)
+        objects[la]->active = false;
+
+    if (la >= objects.size()-1 || la < 0)
+        objects[faa]->active = true;
+    else
+        objects[laa]->active = true;
+}
+
 struct screen_handler {
     screen_handler() {}
     template<typename... Args> 
@@ -148,32 +185,21 @@ struct screen_handler {
                 obj->display(sink);
     }
 
-    void incr() {
-        int i = 0, c = 0, faa = -1, laa = -1, la = -1;
-        
-        for (auto *obj : objects) {
-            c = i;
-            i++;
+    void add(screen_object *obj) {
+        objects.push_back(obj);
+    }
 
-            if (obj->locked)
-                continue;
+    void add_if_not_exists(screen_object *obj) {
+        for (auto *o : objects)
+            if (o == obj)
+                return;
+        add(obj);
+    }
 
-            if (obj->active)
-                la = c;
-            else
-                laa = c;
-
-            if (faa < 0)
-                faa = c;
-        }
-
-        if (laa == la || faa < 0 || laa < 0)
-            return;
-
-        if (i >= objects.size())
-            objects[faa]->active = true;
-        else
-            objects[laa]->active = true;
+    void remove(screen_object *obj) {
+        for (int i = 0; i < objects.size(); i++)
+            if (objects[i] == obj)
+                objects.erase(objects.begin() + i);
     }
 
     screen_object *getActive() {
@@ -186,7 +212,8 @@ struct screen_handler {
     bool keyboard(con_basic_key _key) {
         char key = _key & 0xFF;
         if (key == 0x9) {
-            incr();
+            incr(objects);
+            state->graphics_change = true;
             return true;
         }
 
@@ -203,6 +230,81 @@ struct screen_handler {
         }
 
         return false;
+    }
+};
+
+struct list_item_object : public screen_object {
+    list_item_object(sizef _size, std::string _text = "", bool _active = false, bool _locked = false)
+        : screen_object(_size, _active) {
+            setText(_text);
+            locked = _locked;
+        }
+
+    virtual void setText(std::string _text, con_color color = 15) {
+        text = _text;
+        _tc.clear();
+        for (auto &c : _text)
+            _tc.push_back({c,color});
+    }
+
+    std::string text;
+    std::basic_string<cpix_wide> _tc;
+
+    void display(i_buffer_sink_dim<cpix_wide> *sink) override {
+        setText(text, active ? 13 : 15);
+        sink->write(_tc.c_str(), sink->getSample(size), _tc.size());
+    }
+};
+
+struct toggle_item_object : public list_item_object {
+    typedef std::function<void(bool)> callback_type;
+
+    toggle_item_object(std::string text, callback_type _callback) : list_item_object({0.,0.,1.,1.}) {
+        setText(text);
+        this->callback = _callback;
+        this->toggle = false;
+    }
+
+    callback_type callback;
+    bool toggle;
+
+    bool keyboard(con_basic_key key) override {
+        if (key == ' ') {
+            callback(toggle = !toggle);
+            state->graphics_change = true;
+        } else
+            return false;
+        return true;
+    }
+};
+
+struct list_object : public screen_object {
+    list_object(sizef _size) : screen_object(_size) {}
+
+    std::vector<list_item_object*> items;
+
+    void display(i_buffer_sink_dim<cpix_wide> *sink) override {
+        sizei scr = sizei{posi{},sink->getDimensions()};
+        sizef p = size.denorm(scr);
+        int i = 0;
+        for (auto *obj : items) {
+            obj->size = (p + posf(0, i++)).norm(scr);
+            obj->display(sink);
+        }
+    }
+
+    bool keyboard(con_basic_key key) override {
+        for (auto *obj : items) {
+            if (obj->active && obj->keyboard(key))
+                return true;
+        }
+
+        if (key == KEY_DOWN) {
+            incr(items);
+            state->graphics_change = true;
+        } else 
+            return false;
+        return true;
     }
 };
 
@@ -391,6 +493,20 @@ struct gradient_object : public screen_object {
     }
 };
 
+struct graph_object : public screen_object {
+    graph_object(sizef _size) : screen_object(_size) { locked = true; }
+    void display(i_buffer_sink_dim<cpix_wide> *sink) override {
+        for (con_norm x = 0; x < size.width; x += sink->getSampleWidthStep()) {
+            pixel cand = pixel(x * 255, 0, 0, 255);
+            pixel test = std::invoke(state->remap_rgb, state, cand);
+            con_norm y = 1-(test.r / con_norm(pixel::bit_max));
+            cpix_wide ch;
+            getDitherColored(test.r, test.g, test.b, &ch.ch, &ch.co);
+            sink->writeSample(size.x + x, size.height * y - size.y, ch);
+        }
+    }
+};
+
 pixel program::remap_ramp(pixel& p) {
     float inn[] = 
                {float(p.r) / pixel::bit_max,
@@ -460,7 +576,7 @@ pixel program::remap_comp(pixel& p) {
             t mul = (slider[7]-pow(slider[6]-norm, slider[i])) * divr;
 
             outn[j] *= (1-pow(1-(value/float(divr)), slider[i]));
-            outputs[j] += mul; 
+            outputs[j] = t(outputs[j] + mul); 
         }
     }
 
@@ -471,6 +587,37 @@ pixel program::remap_comp(pixel& p) {
     //return pixel(inputs[0], inputs[1], inputs[2], 255);
 }
 
+pixel program::remap_fun(pixel& p) {
+    float inn[] = 
+               {float(p.r) / pixel::bit_max,
+                float(p.g) / pixel::bit_max,
+                float(p.b) / pixel::bit_max};
+
+    typedef pixel::value_type t;
+
+    t outputs[3] = {0,0,0};
+    t inputs[3] = {p.r,p.g,p.b}; //{p.r, p.g, p.b};
+    
+    float outn[3] = {1,1,1};
+
+    const int count = sliders->slider_count;
+
+    float slider[count];
+
+    sliders->getSliders(prop::VALUE, &slider[0]);
+
+    float div = 1.0f / count;
+    t divr = 256 / count;
+
+
+    for (int i = 0; i < 3; i++) {
+        outputs[i] = inputs[i];
+    }
+
+
+    return pixel(outputs[0], outputs[1], outputs[2], 255);
+}
+
 void program::init() {
     graphics_change = true;
     for (int i = 0; i < 4; i++)
@@ -478,10 +625,32 @@ void program::init() {
     active_colors[3] = false;
     image_target = new pixel_image<cpix_wide>(500, 500);
     target = new buffer<cpix_wide>(con.getDimensions());
+    
     sliders = new sliders_object<slider_cnt>({0.1, 0.66, 0.8, 0.22}, true);
     pviewer = new pviewer_object();
     gradient = new gradient_object({0.0, 0.0, 1.0, 0.5});
-    handler = new screen_handler(gradient, pviewer, sliders);
+
+    graph_object *graph = new graph_object({0.2, 0.0, 0.7, 0.5});
+    list_object *list = new list_object({0.0, 0.5, 1.0, 0.5});
+    auto toggle_object = [](bool s, screen_object* obj) {
+        if (s) state->handler->add_if_not_exists(obj); else state->handler->remove(obj);
+    };
+    list->items.push_back(new list_item_object({}, "[Settings]", false, true));
+    list->items.push_back(new toggle_item_object("Exit", [](bool){ exit(0); }));
+    list->items.push_back(new toggle_item_object("Remap Function", [](bool) {
+        static int i = 0;
+        static remap_func remaps[] = {&program::remap_ramp, &program::remap_comp, &program::remap_fun};
+        state->remap_rgb = remaps[i++ % (sizeof(remaps)/sizeof(remaps[0]))];
+    }));
+    list->items.push_back(new toggle_item_object("Graph", [toggle_object,graph](bool s){ toggle_object(s, graph); }));
+    list->items.push_back(new toggle_item_object("Sliders", [toggle_object](bool s){ toggle_object(s, state->sliders); }));
+    list->items.push_back(new toggle_item_object("PViewer", [toggle_object](bool s){ toggle_object(s, state->pviewer); }));
+    list->items.push_back(new toggle_item_object("Red", [toggle_object](bool s){ state->active_colors[0] = s; }));
+    list->items.push_back(new toggle_item_object("Green", [toggle_object](bool s){ state->active_colors[1] = s; }));
+    list->items.push_back(new toggle_item_object("Blue", [toggle_object](bool s){ state->active_colors[2] = s; }));
+    list->items.push_back(new toggle_item_object("Alpha", [toggle_object](bool s){ state->active_colors[3] = s; }));
+
+    handler = new screen_handler(gradient, pviewer, sliders, list);
 
     sliders->setSliders(prop::VALUE, 1.);
     sliders->setSliders(prop::STEP, 0.1);
@@ -498,7 +667,7 @@ void program::init() {
     sliders->names[7] = "Y-shift";
 
     remap_rgb = &program::remap_ramp;
-    remap_rgb = &program::remap_comp;
+    remap_rgb = &program::remap_fun;
 }
 
 int main() {
@@ -516,7 +685,7 @@ int main() {
         con_basic_key _key = con.readKeyAsync();
         key = _key & 0xFF;
 
-        if (key) {
+        if (key || _key) {
             state->handler->keyboard(_key);
             state->pviewer->lkey = key;
             state->pviewer->_lkey = _key;
@@ -534,6 +703,7 @@ int main() {
             state->graphics_change = false;
         }
 
-        con.sleep(10);
+        if (key == 0)
+            con.sleep(10);
     }
 }
