@@ -11,7 +11,7 @@
 using color_t = cons::con_color;
 
 #ifndef DITHERING
-#include "../imgcat/colorMappingFast.h"
+#include "../imgcat/colorMappingFaster.h"
 #else
 #include "../imgcat/colorMappingDither.h"
 #endif
@@ -39,6 +39,7 @@ struct program {
     pixel remap_ramp(pixel&);
     pixel remap_comp(pixel&);
     pixel remap_fun(pixel&);
+    pixel remap_none(pixel&);
     screen_handler *handler;
     sliders_object<slider_cnt> *sliders;
     pviewer_object *pviewer;
@@ -247,6 +248,10 @@ struct list_item_object : public screen_object {
             _tc.push_back({c,color});
     }
 
+    virtual con_pos getTextHeight(con_pos width) {
+        return (text.size() / width) + 1;
+    }
+
     std::string text;
     std::basic_string<cpix_wide> _tc;
 
@@ -286,9 +291,11 @@ struct list_object : public screen_object {
     void display(i_buffer_sink_dim<cpix_wide> *sink) override {
         sizei scr = sizei{posi{},sink->getDimensions()};
         sizef p = size.denorm(scr);
+        posf textOffset;
         int i = 0;
         for (auto *obj : items) {
-            obj->size = (p + posf(0, i++)).norm(scr);
+            textOffset = textOffset + posf(0, obj->getTextHeight(p.width));
+            obj->size = (p + textOffset).norm(scr);
             obj->display(sink);
         }
     }
@@ -387,7 +394,7 @@ struct sliders_object : public screen_object {
 
     void display(i_buffer_sink_dim<cpix_wide> *sink) override {
         for (int i = 0; i < sliderCount; i++) {
-            con_color _c = i == selected && active ? 15 : 7;
+            con_color _c = i == selected && active ? 15 : 9;
 
             con_norm xsize = size.width / con_norm(sliderCount);
             con_norm ysize = size.height;
@@ -439,15 +446,17 @@ struct pviewer_object : public screen_object {
     pviewer_object() : screen_object({0.,0.,1.,1.}) { 
         locked = true;
         message = "Initialized";
+        mapping = "None";
     }
 
     void display(i_buffer_sink_dim<cpix_wide> *sink) {
         auto *active = state->handler->getActive();
         std::string _activestr = "Active: " + string(active ? active->name() : "None");
         std::string _messagestr = "Message: " + message;
+        std::string _mappingstr = "Mapping: " + mapping;
         std::string _keystr = "Keys: " + (to_string(_lkey) + " " + to_string(lkey));
 
-        std::string _fin = _activestr + " | " + _messagestr + " | " + _keystr;
+        std::string _fin = _activestr + " | " + _messagestr + " | " + _mappingstr + " | " + _keystr;
 
         const char *str = _fin.c_str();
         int len = strlen(str);
@@ -459,6 +468,7 @@ struct pviewer_object : public screen_object {
 
     con_basic_key _lkey, lkey;
     std::string message;
+    std::string mapping;
 
     bool keyboard(con_basic_key _key) override {
         con_basic_key key = _key & 0xFF;
@@ -587,6 +597,42 @@ pixel program::remap_comp(pixel& p) {
     //return pixel(inputs[0], inputs[1], inputs[2], 255);
 }
 
+template<template<typename> typename INB, typename INT,
+         template<typename> typename OUTB, typename OUTT>
+struct conversion_source : OUTB<OUTT> {
+    INB<INT> *source;
+
+    conversion_source(INB<INT> * b):source(b)  {}
+
+    OUTT readSample(con_norm x, con_norm y) override {
+        return OUTT(source->readSample(x, y));
+    }
+
+    OUTT read(con_pos x, con_pos y) override {
+        return OUTT(source->read(x, y));
+    }
+
+    virtual OUTT convert(INT in) {
+        return OUTT(in);
+    }
+
+    ssize_t read(OUTT* buf, size_t start, size_t count) override {
+        INT inbuf[count];
+        ssize_t cnt = source->read(&inbuf[0], start, count);
+        for (int i = 0; i < count; i++)
+            buf[i] = OUTT(inbuf[i]);
+        return count;
+    }
+
+    ssize_t read(OUTT* buf, size_t count) override {
+        INT inbuf[count];
+        ssize_t cnt = source->read(&inbuf[0], count);
+        for (int i = 0; i < count; i++)
+            buf[i] = OUTT(inbuf[i]);
+        return count;
+    }
+};
+
 pixel program::remap_fun(pixel& p) {
     float inn[] = 
                {float(p.r) / pixel::bit_max,
@@ -611,11 +657,23 @@ pixel program::remap_fun(pixel& p) {
 
 
     for (int i = 0; i < 3; i++) {
-        outputs[i] = inputs[i];
+        for (int j = 0; j < count; j++) {
+            t upper = divr * (j+1);
+            t lower = divr * j;
+            t value = inputs[i] - t(lower);
+            if (value < 0 || value >= divr)
+                continue;
+            outputs[i] += t(float(value) + ((slider[j] - 1) * divr));
+            //outputs[i] = t(outputs[i] + value);
+        }
     }
 
 
     return pixel(outputs[0], outputs[1], outputs[2], 255);
+}
+
+pixel program::remap_none(pixel& p) {
+    return p;
 }
 
 void program::init() {
@@ -626,7 +684,7 @@ void program::init() {
     image_target = new pixel_image<cpix_wide>(500, 500);
     target = new buffer<cpix_wide>(con.getDimensions());
     
-    sliders = new sliders_object<slider_cnt>({0.1, 0.66, 0.8, 0.22}, true);
+    sliders = new sliders_object<slider_cnt>({0.05, 0.66, 0.9, 0.22}, true);
     pviewer = new pviewer_object();
     gradient = new gradient_object({0.0, 0.0, 1.0, 0.5});
 
@@ -639,8 +697,12 @@ void program::init() {
     list->items.push_back(new toggle_item_object("Exit", [](bool){ exit(0); }));
     list->items.push_back(new toggle_item_object("Remap Function", [](bool) {
         static int i = 0;
-        static remap_func remaps[] = {&program::remap_ramp, &program::remap_comp, &program::remap_fun};
-        state->remap_rgb = remaps[i++ % (sizeof(remaps)/sizeof(remaps[0]))];
+        static remap_func remaps[] = {&program::remap_none, &program::remap_ramp, &program::remap_comp, &program::remap_fun};
+        static std::string func_strings[] = {"None", "Ramp", "Comp", "Fun"};
+        static int func_count = sizeof(remaps) / sizeof(remaps[0]);
+        int index = ++i % func_count;
+        state->remap_rgb = remaps[index];
+        state->pviewer->mapping = func_strings[index];
     }));
     list->items.push_back(new toggle_item_object("Graph", [toggle_object,graph](bool s){ toggle_object(s, graph); }));
     list->items.push_back(new toggle_item_object("Sliders", [toggle_object](bool s){ toggle_object(s, state->sliders); }));
@@ -666,7 +728,6 @@ void program::init() {
     sliders->names[6] = "X-shift";
     sliders->names[7] = "Y-shift";
 
-    remap_rgb = &program::remap_ramp;
     remap_rgb = &program::remap_fun;
 }
 

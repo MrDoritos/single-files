@@ -1,0 +1,2 @@
+[1727743968] Opened log
+[1727743968] Initialized color table
