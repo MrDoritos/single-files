@@ -7,14 +7,11 @@
 
 #include "../console-2/autoconsole.h"
 #include "../console-2/buffers.h"
+#include "../console-2/colors/colorMappingFast.h"
+#include "../console-2/colors/colorMappingFaster.h"
+#include "../console-2/colors/colorMappingDither.h"
 
 using color_t = cons::con_color;
-
-#ifndef DITHERING
-#include "../imgcat/colorMappingFaster.h"
-#else
-#include "../imgcat/colorMappingDither.h"
-#endif
 
 using namespace cons;
 using namespace std;
@@ -33,7 +30,7 @@ const int slider_cnt = 8;
 struct program {
     bool active_colors[4];
     bool graphics_change;
-    pixel_image<cpix_wide> *image_target;
+    image<pixel> *image_target;
     buffer<cpix_wide> *target;
     remap_func remap_rgb = 0;
     pixel remap_ramp(pixel&);
@@ -44,6 +41,7 @@ struct program {
     sliders_object<slider_cnt> *sliders;
     pviewer_object *pviewer;
     gradient_object *gradient;
+    color_map<wchar_t> *colormap;
     void init();
 } *state;
 
@@ -109,7 +107,8 @@ void displayGradient(TB *target) {
             //color = state->*remap_rgb(color);
             color = std::invoke(state->remap_rgb, state, color);
 
-            getDitherColored(color.r, color.g, color.b, &cpix.ch, &cpix.co);
+            //getDitherColored(color.r, color.g, color.b, &cpix.ch, &cpix.co);
+            cpix = state->colormap->getCpix(color);
             
             //target.writeSample(x, y, cpix);
             //target.writeSample(x, y, color);
@@ -118,10 +117,6 @@ void displayGradient(TB *target) {
         }
     }
 }
-
-struct our_key {
-    
-};
 
 struct screen_object {
     screen_object(sizef _size, bool _active = false, bool _render = true) {
@@ -283,6 +278,49 @@ struct toggle_item_object : public list_item_object {
     }
 };
 
+struct text_item_object : public list_item_object {
+    typedef std::function<void(std::basic_string<wchar_t>)> callback_type;
+
+    text_item_object(std::string _prompt, std::basic_string<wchar_t> _entered, callback_type _callback) : list_item_object({0.,0.,1.,1.}) {
+        setText(_prompt);
+        this->prompt = _prompt;
+        this->entered = _entered;
+        this->callback = _callback;
+    }
+
+    void setText(std::string _text, con_color color = 15) override {
+        text = _text;
+        _tc.clear();
+        for (auto &c : text)
+            _tc.push_back({c,color});
+        for (auto &c : entered)
+            _tc.push_back({c,15});
+    }
+
+    std::string prompt;
+    std::basic_string<wchar_t> entered;
+    callback_type callback;
+
+    bool keyboard(con_basic_key key) override {
+        con_basic ascii = key & 0xFF;
+        
+        if (ascii == 0x7) {
+            if (entered.size() > 0)
+                entered.pop_back();
+        } else {
+            entered.push_back(ascii);
+        }
+
+        if (entered.size() > 0)
+            callback(entered);
+
+        state->graphics_change = true;
+        setText(prompt);
+        
+        return true;
+    }
+};
+
 struct list_object : public screen_object {
     list_object(sizef _size) : screen_object(_size) {}
 
@@ -301,16 +339,15 @@ struct list_object : public screen_object {
     }
 
     bool keyboard(con_basic_key key) override {
-        for (auto *obj : items) {
-            if (obj->active && obj->keyboard(key))
-                return true;
-        }
-
         if (key == KEY_DOWN) {
             incr(items);
             state->graphics_change = true;
-        } else 
-            return false;
+        } else {
+            for (auto *obj : items) {
+                if (obj->active && obj->keyboard(key))
+                    return true;
+            }
+        }
         return true;
     }
 };
@@ -454,9 +491,10 @@ struct pviewer_object : public screen_object {
         std::string _activestr = "Active: " + string(active ? active->name() : "None");
         std::string _messagestr = "Message: " + message;
         std::string _mappingstr = "Mapping: " + mapping;
+        std::string _colormappingstr = "Color Mapping: " + colormap;
         std::string _keystr = "Keys: " + (to_string(_lkey) + " " + to_string(lkey));
 
-        std::string _fin = _activestr + " | " + _messagestr + " | " + _mappingstr + " | " + _keystr;
+        std::string _fin = _activestr + " | " + _messagestr + " | " + _mappingstr + " | " + _colormappingstr + " | " + _keystr;
 
         const char *str = _fin.c_str();
         int len = strlen(str);
@@ -469,6 +507,7 @@ struct pviewer_object : public screen_object {
     con_basic_key _lkey, lkey;
     std::string message;
     std::string mapping;
+    std::string colormap;
 
     bool keyboard(con_basic_key _key) override {
         con_basic_key key = _key & 0xFF;
@@ -511,7 +550,7 @@ struct graph_object : public screen_object {
             pixel test = std::invoke(state->remap_rgb, state, cand);
             con_norm y = 1-(test.r / con_norm(pixel::bit_max));
             cpix_wide ch;
-            getDitherColored(test.r, test.g, test.b, &ch.ch, &ch.co);
+            ch = state->colormap->getCpix(test);
             sink->writeSample(size.x + x, size.height * y - size.y, ch);
         }
     }
@@ -599,10 +638,10 @@ pixel program::remap_comp(pixel& p) {
 
 template<template<typename> typename INB, typename INT,
          template<typename> typename OUTB, typename OUTT>
-struct conversion_source : OUTB<OUTT> {
+struct source_convert : OUTB<OUTT> {
     INB<INT> *source;
 
-    conversion_source(INB<INT> * b):source(b)  {}
+    source_convert(INB<INT> * b):source(b)  {}
 
     OUTT readSample(con_norm x, con_norm y) override {
         return OUTT(source->readSample(x, y));
@@ -681,7 +720,7 @@ void program::init() {
     for (int i = 0; i < 4; i++)
         active_colors[i] = true;
     active_colors[3] = false;
-    image_target = new pixel_image<cpix_wide>(500, 500);
+    image_target = new image<pixel>(500, 500);
     target = new buffer<cpix_wide>(con.getDimensions());
     
     sliders = new sliders_object<slider_cnt>({0.05, 0.66, 0.9, 0.22}, true);
@@ -693,16 +732,42 @@ void program::init() {
     auto toggle_object = [](bool s, screen_object* obj) {
         if (s) state->handler->add_if_not_exists(obj); else state->handler->remove(obj);
     };
+
+    static color_map<wchar_t>* color_maps[] = {
+        new color_map_fast(),
+        new color_map_faster(),
+        new color_map_dither()
+    };
+
+    static int color_map_index = 0;
+
+    static remap_func remaps[] = {
+        &program::remap_none,
+        &program::remap_ramp,
+        &program::remap_comp,
+        &program::remap_fun
+    };
+
+    static int remap_index = 0;
+
     list->items.push_back(new list_item_object({}, "[Settings]", false, true));
     list->items.push_back(new toggle_item_object("Exit", [](bool){ exit(0); }));
     list->items.push_back(new toggle_item_object("Remap Function", [](bool) {
-        static int i = 0;
-        static remap_func remaps[] = {&program::remap_none, &program::remap_ramp, &program::remap_comp, &program::remap_fun};
         static std::string func_strings[] = {"None", "Ramp", "Comp", "Fun"};
         static int func_count = sizeof(remaps) / sizeof(remaps[0]);
-        int index = ++i % func_count;
-        state->remap_rgb = remaps[index];
-        state->pviewer->mapping = func_strings[index];
+        remap_index = ++remap_index % func_count;
+        state->remap_rgb = remaps[remap_index];
+        state->pviewer->mapping = func_strings[remap_index];
+    }));
+    list->items.push_back(new toggle_item_object("Color Map Function", [](bool) {
+        static std::string func_strings[] = {"Fast", "Faster", "Dither"};
+        static int func_count = sizeof(color_maps) / sizeof(color_maps[0]);
+        color_map_index = ++color_map_index % func_count;
+        state->colormap = color_maps[color_map_index];
+        state->pviewer->colormap = func_strings[color_map_index];
+    }));
+    list->items.push_back(new text_item_object("Characters: ", L" LH", [](std::basic_string<wchar_t> s) {
+        state->colormap->setCharacters(s.c_str());
     }));
     list->items.push_back(new toggle_item_object("Graph", [toggle_object,graph](bool s){ toggle_object(s, graph); }));
     list->items.push_back(new toggle_item_object("Sliders", [toggle_object](bool s){ toggle_object(s, state->sliders); }));
@@ -719,16 +784,17 @@ void program::init() {
     sliders->setSliders(prop::MIN, -1);
     sliders->setSliders(prop::MAX, 4);
 
-    sliders->names[0] = "Red/0";
-    sliders->names[1] = "Green/1";
-    sliders->names[2] = "Blue/2";
-    sliders->names[3] = "RRamp/3";
-    sliders->names[4] = "GRamp/4";
-    sliders->names[5] = "BRamp/5";
-    sliders->names[6] = "X-shift";
-    sliders->names[7] = "Y-shift";
+    sliders->names[0] = "R/0";
+    sliders->names[1] = "G/1";
+    sliders->names[2] = "B/2";
+    sliders->names[3] = "Rr/3";
+    sliders->names[4] = "Gr/4";
+    sliders->names[5] = "Br/5";
+    sliders->names[6] = "X/6";
+    sliders->names[7] = "Y/7";
 
-    remap_rgb = &program::remap_fun;
+    remap_rgb = remaps[0];
+    colormap = color_maps[0];
 }
 
 int main() {
