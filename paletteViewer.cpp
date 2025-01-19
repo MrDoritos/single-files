@@ -304,7 +304,7 @@ struct text_item_object : public list_item_object {
     bool keyboard(con_basic_key key) override {
         con_basic ascii = key & 0xFF;
         
-        if (ascii == 0x7) {
+        if (ascii == '\b') {
             if (entered.size() > 0)
                 entered.pop_back();
         } else {
@@ -767,7 +767,10 @@ void program::init() {
         state->pviewer->colormap = func_strings[color_map_index];
     }));
     list->items.push_back(new text_item_object("Characters: ", L" LH", [](std::basic_string<wchar_t> s) {
-        state->colormap->setCharacters(s.c_str());
+        if (s.length() > 2) {
+            for (auto* cm : color_maps)
+                cm->setCharacters(s.c_str());
+        }
     }));
     list->items.push_back(new toggle_item_object("Graph", [toggle_object,graph](bool s){ toggle_object(s, graph); }));
     list->items.push_back(new toggle_item_object("Sliders", [toggle_object](bool s){ toggle_object(s, state->sliders); }));
@@ -808,7 +811,7 @@ int main() {
     //characters = (wchar_t*)L" ▒█"; //full block character
     #endif
 
-    while (key != 'q' && key != '\b') {
+    while (key != 'q' && key != '\e') {
         con_basic_key _key = con.readKeyAsync();
         key = _key & 0xFF;
 
