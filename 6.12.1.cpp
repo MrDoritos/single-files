@@ -1,6 +1,13 @@
-#include <iostream>
-#include <math.h>
-main(){int i;std::cin>>i;printf("%i\n",1+(uint)log10(i));}
+//#include <iostream>
+//#include <math.h>
+#include <cstring>
+#include <cstdio>
+//#include <stdlib.h>
+//main(){int i;std::cin>>i;printf("%i\n",1+(uint)log10(i));}
+
+//main(){int i;std::cin>>i;std::cout<<1+(uint)log10(i)<<'\n';}
+//main(){std::string s;std::cin>>s;printf("%i\n",s.size());}
+main(){long i;printf("%i\n",strlen(gets(i)));}
 
 /*
 int DigitCount(int num) {
