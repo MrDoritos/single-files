@@ -54,6 +54,70 @@ namespace Escape {
 
         Query Color ? DECRQSS
         OSC 48:2:1:2:3m ESC P $ qm ESC \
+
+        https://vt100.net/docs/vt510-rm/chapter4.html
+    */
+
+    /*
+    from syscalls of curses
+
+    > TIOCGWINSZ
+    > TCSETSW
+    > TCGETS
+
+    \33[?1049h\33[22;0;0t\33[1;24r\33(B\33[m\33[4l\33[?7h\33[?25l
+
+    [22;0;0t report xterm title, restore window, restore iconified
+
+    [1;24r r set scrolling region 1;24 set scrolling region
+
+    [B ascii charset
+
+    [m reset
+
+    [4l disable insert mode
+
+    [?7h enable auto wrap
+
+    [?25l hide cursor
+
+
+    > TCGETS
+    > TCSETSW
+
+
+    \33[39;49m\33]4;0;rgb:00/00/00\33\\\33]4;1;rgb:7F/00/00\33\\\33]4;2;rgb:00/7F/00\33\\\33]4;3;rgb:7F/7F/00\33\\\33]4;4;rgb:00/00/7F\33\\\33]4;5;rgb:7F/00/7F\33\\\33]4;6;rgb:00/7F/7F\33\\\33]4;7;rgb:7F/7F/7F\33\\\33[?1h\33=
+
+    [39;49m set graphics rendition, reset fg and bg to default
+
+    ^[]4;0;rgb:00/00/00^[\      4: set color of palette, 0: palette id, rgb:000000 ST
+
+    [?1h application cursor keys mode, different codes for arrows, home/end
+
+    =  different keypad mode, send codes for keypad (  > to disable   )
+
+    
+    > TIOCGWINSZ
+
+    
+    \33[39;49m\33[37m\33[40m\33[H\33[2J
+    
+    [39;49m set graphics rendition, reset fg and bg to default
+
+    [37m fg to white
+
+    [40m bg to black
+
+    [H go home
+
+
+
+    > poll({fd=0, events=POLLIN}, 1, 0) = 0 (timeout 0)
+
+    > write more buffers
+
+    > TCSETSW
+
     */
 
 
