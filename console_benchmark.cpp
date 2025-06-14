@@ -53,7 +53,6 @@ int main() {
     using BUFFERRANDOM = MakeFunc<bufferrandom>;
 
     printBench<BUFFERRANDOM, 5>("bufferrandom", stderr);
-    return 0;
 
     printBench<XYCHRANDOM, 100>("xychrandom", stderr);
     printBench<XYCORANDOM, 100>("xycorandom", stderr);
