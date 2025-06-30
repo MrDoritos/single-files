@@ -25,7 +25,7 @@ void diamond(int n) {
 int main() {
 	int n;
 	scanf("%i", &n);
-	diamond(n);
+	diamond(n*2-1);
 
 	return 0;
 }
