@@ -8,11 +8,11 @@ void print(int i, int n) {
 	//memset(buf, '-', n);
 	for (int j = 0; j < n; j++)
 		buf[j] = '-';
-
+	
 	buf[n]=0;
 
 	int s = (n / 2) - i + 1;
-
+	printf("print - i: %i, n: %i, s: %i\n", i, n, s);
 	//memset(buf + s, '*', n-s-s);
 	for (int j = 0; j < n-s-s; j++)
 		buf[j+s] = '*';
@@ -23,6 +23,7 @@ void print(int i, int n) {
 void diamond(int n) {	
 	for (int j = 0; j < n; j++) {
 		int i = (j > n / 2) ? n-j : j+1;
+		printf("diamond - i: %i, n: %i, j: %i\n", i, n, j);
 		print(i, n);
 	}
 }
