@@ -18,7 +18,7 @@ struct Node {
 
 	constexpr inline Node *append_sibling(Node *node) {
 		if (sibling)
-			node->append_sibling(node);
+			sibling->append_sibling(node);
 
 		sibling = node;
 		sibling->parent = parent;
@@ -53,18 +53,6 @@ struct Node {
 		name = text;
 		return *this;
 	}
-
-	/*
-	friend constexpr inline Node *operator<<(Node *node, const char *text) {
-		*node << text;
-		return node;
-	}
-
-	friend constexpr inline Node *operator<<(const char *text, Node *node) {
-		*node << text;
-		return node;
-	}
-	*/
 
 	struct NodeIterator {
 		using value_type = Node;
@@ -176,10 +164,8 @@ struct Node {
 		constexpr inline bool operator!=(const ReverseNodeIterator &other) const { return ptr != other.ptr; }
 	};
 
-	struct DepthFirstIterator : protected NodeIterator {
-		bool bubbling;
-	
-		constexpr DepthFirstIterator(Node *root):NodeIterator(root),bubbling(false) {}
+	struct DepthFirstIterator : protected NodeIterator {	
+		constexpr DepthFirstIterator(Node *root):NodeIterator(root) {}
 		
 		constexpr inline DepthFirstIterator &operator++() {
 			Node *next = ptr->sibling;
@@ -209,6 +195,48 @@ struct Node {
 		constexpr inline bool operator==(const DepthFirstIterator &other) const { return ptr == other.ptr; }
 		constexpr inline bool operator!=(const DepthFirstIterator &other) const { return ptr != other.ptr; }
 	};
+
+	struct BreadthFirstIterator : protected NodeIterator {
+		constexpr BreadthFirstIterator(Node *root):NodeIterator(root){}
+		
+		constexpr inline BreadthFirstIterator &operator++() {
+			Node *next = ptr->child ? ptr->child : ptr->sibling;
+
+			if (next) {
+				ptr = next;
+				return *this;
+			}
+
+			if (ptr->parent) {
+				ptr = ptr->parent->sibling;
+				return *this;
+			}
+
+			ptr = next;
+			return *this;
+		}
+
+		constexpr inline BreadthFirstIterator operator++(int) {
+			BreadthFirstIterator temp = *this;
+			++*this;
+			return temp;
+		}
+
+		constexpr inline reference operator*() const { return *ptr; }
+		constexpr inline pointer operator->() const { return ptr; }
+
+		constexpr inline BreadthFirstIterator begin() const {
+			return *this;
+		}
+
+		constexpr inline BreadthFirstIterator end() const {
+			return BreadthFirstIterator(nullptr);
+		}
+
+		constexpr inline bool operator==(const BreadthFirstIterator &other) const { return ptr == other.ptr; }
+		constexpr inline bool operator!=(const BreadthFirstIterator &other) const { return ptr != other.ptr; }
+		
+	};
 	
 	constexpr inline NodeIterator begin() const { return NodeIterator(child); }
 	constexpr inline NodeIterator end() const { return NodeIterator(nullptr); }
@@ -218,6 +246,7 @@ struct Node {
 	constexpr inline NodeIterator forward() const { return begin(); }
 	constexpr inline ReverseNodeIterator backward() const { return rbegin(); }
 	constexpr inline DepthFirstIterator depth_first() const { return DepthFirstIterator(deepest_child()); }
+	constexpr inline BreadthFirstIterator breadth_first() const { return BreadthFirstIterator((Node*)this); }
 
 	constexpr inline void print_node_name(const int &depth = 0, const char *class_name = "Node") const {
 		char prepend[depth+1] = {0};
@@ -282,14 +311,13 @@ struct Node {
 		for (auto &node : depth_first())
 			node.print_node_name(depth, "visit");
 	}
-};
 
-/*
-Node &operator<<(Node &node, const char *text) {
-	*node << text;
-	return node;
-}
-*/
+	constexpr inline void print_tree_breadth_first(const int &depth = 0) const {
+		print_node_name(depth, "Root");
+		for (auto &node : breadth_first())
+			node.print_node_name(depth, "visit");
+	}
+};
 
 int main() {
 	Node root;
@@ -298,11 +326,21 @@ int main() {
 
 	*(root << new Node()) << "node" << new Node("hello");
 
-	//root << new Node("sibling") << new Node("child");
 	Node sibling("sibling");
 	Node child("child");
 
 	root << sibling << child;
+
+	Node one("1"), two("2"), three("3"), four("4"), oneone("1.1"), twoone("2.1"), threeone("3.1"), fourone("4.1");
+
+	root << one;
+       	one << two;
+       	two << three;
+       	three << four;
+	one << oneone;
+	two << twoone;
+	three << threeone;
+	four << fourone;	
 
 	root.print_tree_native();
 
@@ -313,6 +351,8 @@ int main() {
 	root.print_tree_traversal();
 
 	root.print_tree_depth_first();
+
+	root.print_tree_breadth_first();
 
 	return 0;
 }
