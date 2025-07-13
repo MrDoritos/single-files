@@ -79,7 +79,22 @@ struct NodeIteratorT {
         return next;
     }
 
-    static constexpr inline int node_depth(Node *node) {
+    static constexpr inline Node *breadth_first_next(Node *node) {
+        if (node->sibling)
+            return node->sibling;
+
+        if (node->parent) {
+            Node *candidate = node->parent;
+            const int level = node_depth(node);
+            if (node->parent->sibling) {
+
+            }
+        }
+
+        return node->child;
+    }
+
+    static constexpr inline int node_depth(const Node *node) {
         int i = 0;
         for (;node->parent;node = node->parent, i++);
         return i;
@@ -138,7 +153,7 @@ struct DepthFirstReverseIteratorT : public NodeIteratorT<DepthFirstReverseIterat
     using NodeIterator::ptr;
 
     constexpr inline DepthFirstReverseIteratorT &operator++() {
-        ptr = NodeIterator::breadth_first_next(ptr);
+        ptr = NodeIterator::depth_first_reverse_next(ptr);
         return *this;
     }
 
@@ -197,8 +212,56 @@ struct Node {
 
     inline std::string get_name(const int &pad_left = 0, const char *class_name = "Node") const {
         std::string prepend(pad_left, ' ');
+        const char *nullstr = "null";
+        const char *name = nullstr;
 
-        return prepend + class_name + ": " + (this ? name : "null");
+        if (this) {
+            const int depth = NodeIterator::node_depth(this);
+            name = this->name;
+
+            if (pad_left > 0 && depth > 0 && pad_left / depth > 0) {
+                const int mult = pad_left / depth;
+                Node *ancestor = parent;
+                int ut = pad_left-(mult*2)-1;
+                ut = ut - 1 > mult/2 ? ut : mult/2;
+                //ut = ut > 1 ? ut : 1;
+                for (int i = ut; ancestor && i > -1; i-=mult, ancestor = ancestor->parent) {
+                    if (ancestor->sibling)
+                        prepend[i] = '|';
+
+                    if (ancestor->parent || !ancestor->sibling) {
+                        if (ancestor->parent) {
+                            const Node *prev = NodeIterator::previous_sibling(ancestor->parent->child);
+                            if (prev && prev == ancestor)
+                                prepend[i] = '\\';
+                        } else {
+                            prepend[i] = '\\';
+                        }
+
+                    }
+                }
+                if (depth > 0) {
+                    int st = pad_left-(mult*2)+1;
+                    st = st > mult-1 ? st : mult;
+                    st = st > 0 ? st : 0;
+                    for (int i = st; i < pad_left; i++)
+                        prepend[i] = '-';
+                //prepend[pad_left-mult]='-';
+                char anc = '|';
+                if (parent && !sibling)
+                    anc = '\\';
+                prepend[st]=anc;
+                //prepend[pad_left-2] = '-';
+                }
+
+                char tree = '-';
+                if (child)
+                    tree = '+';
+                prepend[pad_left-1] = tree;
+            }
+        }
+
+        return prepend + class_name + ": " + name;
     }
 };
 
@@ -222,11 +285,11 @@ void print_nodes(Node &root, const char *name = "Iterator") {
     std::cout << "\n" << name << std::endl;
     Iter iterator = Iter::make(&root);
     for (Node &node : iterator)
-        std::cout << node.get_name(NodeIterator::node_depth(&node)*2) << std::endl;
+        std::cout << node.get_name((NodeIterator::node_depth(&node))*2) << std::endl;
 }
 
 void print_nodes_manual(Node &node) {
-    std::cout << node.get_name(NodeIterator::node_depth(&node)*2) << std::endl;
+    std::cout << node.get_name((NodeIterator::node_depth(&node))*2) << std::endl;
     if (node.child)
         print_nodes_manual(*node.child);
     if (node.sibling)
