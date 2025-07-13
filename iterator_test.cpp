@@ -77,15 +77,15 @@ struct Node {
 
 		constexpr NodeIterator(Node* p):ptr(p){}
 
-		reference operator*() const { return *ptr; }
-		pointer operator->() const { return ptr; }
+		constexpr inline reference operator*() const { return *ptr; }
+		constexpr inline pointer operator->() const { return ptr; }
 
-		NodeIterator& operator++() {
+		constexpr inline NodeIterator& operator++() {
 			ptr = ptr->sibling;
 			return *this;
 		}
 
-		NodeIterator operator++(int) {
+		constexpr inline NodeIterator operator++(int) {
 			NodeIterator temp = *this;
 			ptr = ptr->sibling;
 			return temp;
@@ -95,13 +95,58 @@ struct Node {
 		constexpr inline bool operator!=(const NodeIterator& other) const { return ptr != other.ptr; }
 	};
 
+	constexpr inline Node *first_child() const {
+		return child;
+	}
+
+	constexpr inline Node *last_child() const {
+		Node *node = child;
+		for (; (node != nullptr) && (node->sibling != nullptr); node = node->sibling);
+		return node;
+	}
+
+	constexpr inline Node *deepest_child() const {
+		Node *node = child;
+		for (; (node != nullptr) && (node->child != nullptr); node = node->child);
+		return node;
+	}
+
+	constexpr inline Node *next_node() const {
+		if (sibling)
+			return sibling;
+		if (parent)
+			return parent;
+		return nullptr;
+	}
+
+	constexpr inline Node *root_node() const {
+		Node *node = (Node*)this;
+		for (; node->parent != nullptr; node = node->parent);
+		return node;
+	}
+
+	constexpr inline Node *next_sibling() const {
+		return sibling;
+	}
+
+	constexpr inline Node *parent_node() const {
+		return parent;
+	}
+
+	constexpr inline Node *previous_sibling() const {
+		if (!parent || parent->child == this) return nullptr;
+		Node *node = parent->child;
+		for (;(node != nullptr) && (node->sibling != this); node = node->sibling);
+		return node;
+	}
+
 	struct ReverseNodeIterator : protected NodeIterator {
 		constexpr ReverseNodeIterator(Node *p):NodeIterator(nullptr) {
 			ptr = p;
 			for (Node *i = p; (i != nullptr) && (ptr = i); i = i->sibling);
 		}
 
-		ReverseNodeIterator &operator++() {
+		constexpr inline ReverseNodeIterator &operator++() {
 			const Node *cur = ptr;
 			if (!ptr || !ptr->parent || ptr->parent->child == ptr)
 				ptr = nullptr;
@@ -110,14 +155,14 @@ struct Node {
 			return *this;
 		}
 
-		ReverseNodeIterator operator++(int) {
+		constexpr inline ReverseNodeIterator operator++(int) {
 			ReverseNodeIterator temp = *this;
 			++*this;
 			return temp;
 		}
 
-		reference operator*() const { return *ptr; }
-		pointer operator->() const { return ptr; }
+		constexpr inline reference operator*() const { return *ptr; }
+		constexpr inline pointer operator->() const { return ptr; }
 
 		constexpr inline ReverseNodeIterator begin() const {
 			return *this;
@@ -130,6 +175,40 @@ struct Node {
 		constexpr inline bool operator==(const ReverseNodeIterator &other) const { return ptr == other.ptr; }
 		constexpr inline bool operator!=(const ReverseNodeIterator &other) const { return ptr != other.ptr; }
 	};
+
+	struct DepthFirstIterator : protected NodeIterator {
+		bool bubbling;
+	
+		constexpr DepthFirstIterator(Node *root):NodeIterator(root),bubbling(false) {}
+		
+		constexpr inline DepthFirstIterator &operator++() {
+			Node *next = ptr->sibling;
+				
+			if (next) {
+				next = next->deepest_child();
+				ptr = next ? next : ptr->sibling;
+				return *this;
+			}
+
+			ptr = ptr->parent;
+			return *this;
+		}
+
+		constexpr inline DepthFirstIterator operator++(int) {
+			DepthFirstIterator temp = *this;
+			++*this;
+			return temp;
+		}
+
+		constexpr inline reference operator*() const { return *ptr; }
+		constexpr inline pointer operator->() const { return ptr; }
+
+		constexpr inline DepthFirstIterator begin() const { return *this; }
+		constexpr inline DepthFirstIterator end() const { return DepthFirstIterator(nullptr); }
+
+		constexpr inline bool operator==(const DepthFirstIterator &other) const { return ptr == other.ptr; }
+		constexpr inline bool operator!=(const DepthFirstIterator &other) const { return ptr != other.ptr; }
+	};
 	
 	constexpr inline NodeIterator begin() const { return NodeIterator(child); }
 	constexpr inline NodeIterator end() const { return NodeIterator(nullptr); }
@@ -138,14 +217,15 @@ struct Node {
 
 	constexpr inline NodeIterator forward() const { return begin(); }
 	constexpr inline ReverseNodeIterator backward() const { return rbegin(); }
+	constexpr inline DepthFirstIterator depth_first() const { return DepthFirstIterator(deepest_child()); }
 
-	constexpr inline void print_node_name(const int &depth = 0) const {
+	constexpr inline void print_node_name(const int &depth = 0, const char *class_name = "Node") const {
 		char prepend[depth+1] = {0};
 		memset(prepend, ' ', depth);
 		prepend[depth] = 0;
 
 		printf(prepend);
-		printf("Node: %s\n", name);
+		printf("%s: %s\n", class_name, this != nullptr ? name : "null");
 	}
 
 	constexpr inline void print_tree_native(const int &depth = 0) const {
@@ -168,8 +248,6 @@ struct Node {
 
 		for (auto &child : *this)
 			child.print_tree_iterator(depth+2);
-		//if (sibling)
-		//	sibling->print_tree_iterator(depth);
 	}
 
 	constexpr inline void print_tree_reverse(const int &depth = 0) const {
@@ -180,6 +258,29 @@ struct Node {
 
 		for (auto &child : this->backward())
 			child.print_tree_reverse(depth+2);
+	}
+
+	constexpr inline void print_tree_traversal(const int &depth = 0) const {
+		if (!depth)
+			puts("print_tree_traversal");
+
+		print_node_name(depth);
+
+		first_child()->print_node_name(depth+2, "first_child");
+		last_child()->print_node_name(depth+2, "last_child");
+		root_node()->print_node_name(depth+2, "root_node");
+		previous_sibling()->print_node_name(depth+2, "previous_sibling");
+		next_sibling()->print_node_name(depth+2, "next_sibling");
+		parent_node()->print_node_name(depth+2, "parent_node");
+
+		for (auto &child : *this)
+			child.print_tree_traversal(depth+4);
+	}
+
+	constexpr inline void print_tree_depth_first(const int &depth = 0) const {
+		print_node_name(depth, "Root");
+		for (auto &node : depth_first())
+			node.print_node_name(depth, "visit");
 	}
 };
 
@@ -208,6 +309,10 @@ int main() {
 	root.print_tree_iterator();
 
 	root.print_tree_reverse();
+
+	root.print_tree_traversal();
+
+	root.print_tree_depth_first();
 
 	return 0;
 }
