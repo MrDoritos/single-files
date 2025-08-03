@@ -59,6 +59,7 @@ struct DataValueTupleT {
     std::tuple<Args...> members;
 
     constexpr DataValueTupleT(Args ...args):members(std::make_tuple(args...)){}
+    constexpr DataValueTupleT():members(){}
 
     template<typename Op, size_t ...Is>
     static DPTup apply_op(const DPTup &lhs, const DPTup &rhs, Op op, std::index_sequence<Is...>) {
@@ -79,6 +80,16 @@ struct DataValueTupleT {
     DPTup operator+(const OtherT &other) {
         return apply_op(*this, other, [](auto a, auto b){return a + b;}, std::index_sequence_for<Args...>{});
     }
+
+    template<int N>
+    const auto &get() const {
+        return std::get<N>(members);
+    }
+
+    template<int N>
+    auto &get() {
+        return std::get<N>(members);
+    }
 };
 
 template<typename Derived>
@@ -89,13 +100,13 @@ struct DataPointImplT : public Derived {
 
     using Derived::Derived;
 
-    constexpr inline value_type get_value() const { return Derived::value; }
+    constexpr DataPointImplT():Derived(time_type(),value_type()){}
 
     template<typename FType=float>
     constexpr inline dp_type interpolate(const dp_type &other, const FType &factor) const {
         return dp_type(
             lerp(this->time, other.time, factor),
-            lerp(this->value, other.value, factor)
+            lerp(this->get_value(), other.get_value(), factor)
         );
     }
 };
@@ -106,20 +117,18 @@ struct DPLTR390STBase : public DataPointBase {
     using time_type = typename DataPointBase::time_type;
     using value_type = DVT;
 
-    union {
-        DVT value;
-        struct {
-            float uvi, lux;
-            uint32_t uvs, als;
-        };
-    };
+    uint32_t uvs, als;
+    float uvi, lux;
 
-    constexpr DPLTR390STBase(const time_type &time, const uint32_t &als, const uint32_t &uvs, const float &lux, const float &uvi)
-        :DataPointBase(time),als(als),uvs(uvs),lux(lux),uvi(uvi){}
-    constexpr DPLTR390STBase(const time_type &time, const DVT &value):DataPointBase(time),value(value){}
+    constexpr inline DVT get_value() const { return DVT(uvs, als, uvi, lux); }
 
+    constexpr DPLTR390STBase(const time_type &time, const uint32_t &uvs, const uint32_t &als, const float &uvi, const float &lux):
+        DataPointBase(time),uvs(uvs),als(als),uvi(uvi),lux(lux){}
+    constexpr DPLTR390STBase(const time_type &time, const DVT &value):
+        DPLTR390STBase(time, value.get<0>(), value.get<1>(), value.get<2>(), value.get<3>()){}
+    
     std::string to_string() {
-        return std::format("ALS {} UVS {} Lux {} UVI {}", als, uvs, lux, uvi);
+        return std::format("Time {} UVS {} ALS {} UVI {} Lux {}", this->time, uvs, als, uvi, lux);
     }
 };
 
@@ -306,17 +315,17 @@ struct DataLogT {
 
         float factor = v1.get_factor(v2, time);
 
-        return lerp<value_type, float, RType>(v1.value, v2.value, factor);
+        return lerp<value_type, float, RType>(v1.get_value(), v2.get_value(), factor);
     }
 
     constexpr inline value_type min() const {
         if (!size())
             return 0;
 
-        value_type v = get(0).value;
+        value_type v = get(0).get_value();
 
         for (int i = 1; i < size(); i++) {
-            const value_type &p = get(i).value;
+            const value_type &p = get(i).get_value();
             if (p < v)
                 v = p;
         }
@@ -328,10 +337,10 @@ struct DataLogT {
         if (!size())
             return 0;
 
-        value_type v = get(0).value;
+        value_type v = get(0).get_value();
 
         for (int i = 1; i < size(); i++) {
-            const value_type &p = get(i).value;
+            const value_type &p = get(i).get_value();
             if (p > v)
                 v = p;
         }
@@ -347,7 +356,7 @@ struct DataLogT {
     constexpr inline int64_t sum() const {
         RType s = RType(0);
 
-        for (int i = 0; i < size(); s += get(i).value, i++);
+        for (int i = 0; i < size(); s += get(i).get_value(), i++);
         
         return s;
     }
@@ -365,7 +374,7 @@ struct DataLogT {
     constexpr inline int64_t sum_range(const int &start_index, const int &end_index) const {
         RType s = RType(0);
 
-        for (int i = start_index; i < size() && i < end_index; s += get(i).value, i++);
+        for (int i = start_index; i < size() && i < end_index; s += get(i).get_value(), i++);
 
         return s;
     }
@@ -391,6 +400,36 @@ struct DataLogT {
     }
 };
 
+void test() {
+    using DP = DPLTR390ST;
+    using LB = LoopBufferT<DP, 15>;
+    using DL = DataLogT<DP, LB>;
+
+    LB buffer;
+    DL log(buffer);
+
+    for (int i = 0; i < 20; i++) {
+        log.push_back({i * 1000, i, i * 8, sinf(i*0.5f)*5.0f, cosf(i*2.0f)*5.0f});
+        printf("%i, %i, %i, %i, %i\n", i, log.log.index, log.log.size(), log.log.capacity(), log.log._size);
+    }
+
+    for (int i = 0; i < log.size(); i++) {
+        DP &n = log.get(i);
+        std::cout << "Log: " << i << ", " << n.to_string() << std::endl;
+    }
+
+    int s = 0;
+    DP &n = log.binary_search(s);
+    for (int i = s; i < log.size(); i++) {
+        n = log.binary_search(i * 1000 - 1);
+        std::cout << "Search: " << i << ", " << n.to_string() << std::endl;
+    }
+
+    for (float i = 6000.0f; i < 7000.0f; i+=100.0f) {
+        DP v = log.interpolate_point(i);
+        std::cout << "Interpolate: " << i << ", " << v.to_string() << std::endl;
+    }
+}
 
 int main() {
     using DP = DataPointT<int, int>;
@@ -428,6 +467,8 @@ int main() {
     std::cout << dp1.to_string() << std::endl;
     std::cout << dp2.to_string() << std::endl;
     std::cout << dp3.to_string() << std::endl;
+
+    test();
 
     return 0;
 }
