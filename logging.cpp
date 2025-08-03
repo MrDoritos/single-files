@@ -92,15 +92,18 @@ struct DataValueTupleT {
     }
 };
 
-template<typename Derived>
-struct DataPointImplT : public Derived {
-    using time_type = typename Derived::time_type;
+template<typename TimeBase, typename Derived>
+struct DataPointImplT : public TimeBase, public Derived {
+    using time_type = typename TimeBase::time_type;
     using value_type = typename Derived::value_type;
-    using dp_type = DataPointImplT<Derived>;
+    using dp_type = DataPointImplT<TimeBase, Derived>;
 
     using Derived::Derived;
 
-    constexpr DataPointImplT():Derived(time_type(),value_type()){}
+    template<typename ...Args>
+    constexpr DataPointImplT(const time_type &time, const Args& ...args):TimeBase(time),Derived(args...){}
+    constexpr DataPointImplT(const time_type &time, const value_type &value):TimeBase(time),Derived(value) {}
+    constexpr DataPointImplT():DataPointImplT(time_type(),value_type()) {}
 
     template<typename FType=float>
     constexpr inline dp_type interpolate(const dp_type &other, const FType &factor) const {
@@ -109,12 +112,14 @@ struct DataPointImplT : public Derived {
             lerp(this->get_value(), other.get_value(), factor)
         );
     }
+
+    std::string to_string() {
+        return std::format("Time {} {}", this->time, Derived::to_string());
+    }
 };
 
-template<typename TIME_T = int64_t, typename DataPointBase = DataPointBaseT<TIME_T>>
-struct DPLTR390STBase : public DataPointBase {
+struct DPLTR390STBase {
     using DVT = DataValueTupleT<uint32_t, uint32_t, float, float>;
-    using time_type = typename DataPointBase::time_type;
     using value_type = DVT;
 
     uint32_t uvs, als;
@@ -122,17 +127,17 @@ struct DPLTR390STBase : public DataPointBase {
 
     constexpr inline DVT get_value() const { return DVT(uvs, als, uvi, lux); }
 
-    constexpr DPLTR390STBase(const time_type &time, const uint32_t &uvs, const uint32_t &als, const float &uvi, const float &lux):
-        DataPointBase(time),uvs(uvs),als(als),uvi(uvi),lux(lux){}
-    constexpr DPLTR390STBase(const time_type &time, const DVT &value):
-        DPLTR390STBase(time, value.get<0>(), value.get<1>(), value.get<2>(), value.get<3>()){}
+    constexpr DPLTR390STBase(const uint32_t &uvs, const uint32_t &als, const float &uvi, const float &lux):
+        uvs(uvs),als(als),uvi(uvi),lux(lux){}
+    constexpr DPLTR390STBase(const DVT &value):
+        DPLTR390STBase(value.get<0>(), value.get<1>(), value.get<2>(), value.get<3>()){}
     
     std::string to_string() {
-        return std::format("Time {} UVS {} ALS {} UVI {} Lux {}", this->time, uvs, als, uvi, lux);
+        return std::format("UVS {} ALS {} UVI {} Lux {}", uvs, als, uvi, lux);
     }
 };
 
-using DPLTR390ST = DataPointImplT<DPLTR390STBase<>>;
+using DPLTR390ST = DataPointImplT<DataPointBaseT<>,DPLTR390STBase>;
 
 template<typename T, int LOOP_SIZE = LOG_BUFFER_SIZE>
 struct LoopBufferT {
