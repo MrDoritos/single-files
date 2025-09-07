@@ -1,9 +1,14 @@
 #include <iterator>
 #include <algorithm>
 #include <initializer_list>
+#include <vector>
+
 
 #include "../console/advancedConsole.h"
 #include <math.h>
+
+#include <tiny_obj_loader.h>
+#include <glm/glm.hpp>
 
 namespace Util {
     template<typename T, typename U, typename V, typename RT = T>
@@ -67,6 +72,85 @@ struct vec2 {
 
     friend vec2 operator*(const vec2 &a, const vec2 &b) {
         return vec2 {a.x * b.x, a.y * b.y};
+    }
+};
+
+struct vertex_t {
+    glm::vec3 vertex, normal;
+    glm::vec2 tex;
+    glm::vec3 color;
+};
+
+struct mesh_t {
+    std::vector<vertex_t> verts;
+    int vert_count;
+    glm::mat4 model;
+
+    static bool load(const char *filepath, mesh_t &out_mesh) {
+        tinyobj::attrib_t inattrib;
+        std::vector<tinyobj::shape_t> inshapes;
+        std::vector<tinyobj::material_t> inmaterials;
+        
+        std::string warn, err;
+        bool ret = tinyobj::LoadObj(&inattrib, &inshapes, &inmaterials, &warn, &err, filepath, ".");
+
+        if (!ret) return false;
+
+        inmaterials.push_back(tinyobj::material_t());
+
+        auto &attrib = inattrib;
+        auto &materials = inmaterials;
+        auto &verticies = out_mesh.verts;
+
+        for (size_t s = 0; s < inshapes.size(); s++) {
+            auto &shape = inshapes[s];
+            auto &mesh = shape.mesh;
+            auto &verts = attrib.vertices;
+            auto &norms = attrib.normals;
+            auto &texs = attrib.texcoords;
+            auto &index = mesh.indices;
+            auto vert_count = index.size();
+            auto tri_count = vert_count / 3;
+
+            verticies.reserve(verticies.size() + vert_count);
+
+            for (size_t f = 0; f < tri_count; f++) {
+                int material_id = mesh.material_ids[f];
+                auto *ii = &index[3 * f];
+                auto i0 = ii[0];
+                glm::vec<3, decltype(i0)> is = {ii[0], ii[1], ii[2]};
+
+                if (material_id < 0 || material_id >= materials.size())
+                    material_id = materials.size() - 1;
+
+                glm::vec3 color;
+                for (int i = 0; i < 3; i++) color[i] = materials[material_id].diffuse[i];
+
+                vertex_t vnt[3];
+
+                for (int k = 0; k < 3; k++) {
+                    glm::ivec3 vi, ni, ti;
+
+                    vnt[k].color = color;
+                    for (int i = 0; i < 3; i++) {
+                        vi[i] = is[i].vertex_index;
+                        ni[i] = is[i].normal_index;
+                        ti[i] = is[i].texcoord_index;
+
+                        auto &vert = vnt[i];
+                        vert.vertex[k] = verts[3 * vi[i] + k];
+                        vert.normal[k] = norms[3 * ni[i] + k];
+                        if (k < 2) vert.tex[k] = texs[2 * ti[i] + k];
+                    }
+                }
+
+                for (int i = 0; i < 3; i++) verticies.push_back(vnt[i]);
+            }    
+        }
+        
+        out_mesh.vert_count = verticies.size();
+
+        return true;    
     }
 };
 
