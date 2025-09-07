@@ -2,18 +2,37 @@
 #include <algorithm>
 #include <initializer_list>
 #include <vector>
-
+#include <functional>
 
 #include "../console/advancedConsole.h"
 #include <math.h>
+#include <cmath>
 
 #include <tiny_obj_loader.h>
 #include <glm/glm.hpp>
+#include <glm/ext.hpp>
 
 namespace Util {
     template<typename T, typename U, typename V, typename RT = T>
     constexpr inline RT lerp(const T &a, const U &b, const V &factor) {
         return (a * (V(1.0) - factor)) + (b * (factor));
+    }
+
+    template<typename T, typename U, typename V, typename RT = T>
+    constexpr inline RT wrap(const T &v, const U &min, const V &max) {
+        RT ret = v;
+        const auto r = max - min;
+        while (ret < min) ret += r;
+        while (ret > max) ret -= r;
+        return ret;
+    }
+
+    template<typename T, typename U, typename V, typename RT = T>
+    constexpr inline RT clip(const T &v, const U &min, const V &max) {
+        RT ret = v;
+        if (ret < min) ret = min;
+        if (ret > max) ret = max;
+        return ret;
     }
 }
 
@@ -86,6 +105,10 @@ struct mesh_t {
     int vert_count;
     glm::mat4 model;
 
+    bool load(const char *filepath) {
+        return mesh_t::load(filepath, *this);
+    }
+
     static bool load(const char *filepath, mesh_t &out_mesh) {
         tinyobj::attrib_t inattrib;
         std::vector<tinyobj::shape_t> inshapes;
@@ -154,6 +177,44 @@ struct mesh_t {
     }
 };
 
+struct fragment_t {
+    float depth;
+};
+
+struct renderctx_t {
+    glm::mat4 model, view, projection;
+    glm::vec3 position, up, front, right;
+    float yaw, pitch, fov, width, height, near, far;
+
+    renderctx_t(float yaw, float pitch, float fov, float width, float height, float near, float far)
+    :yaw(yaw),pitch(pitch),fov(fov),width(width),height(height),near(near),far(far),
+    up(0,1.0,0),position(0) {
+    }
+
+    void camera_matrix() {
+        yaw = Util::wrap(yaw, -180, 180);
+        pitch = Util::clip(pitch, -89.9f, 89.9f);
+
+        front = glm::normalize(
+            glm::vec3(
+                std::cos(glm::radians(yaw)) * std::cos(glm::radians(pitch)),
+                std::sin(glm::radians(pitch)),
+                std::sin(glm::radians(yaw)) * std::cos(glm::radians(pitch))
+            )
+        );
+
+        right = glm::normalize(glm::cross(front, up));
+    }
+
+    void projection_matrix() {
+        projection = glm::perspective(glm::radians(fov), width / height, near, far);
+    }
+
+    void view_matrix() {
+        view = glm::lookAt(position, position + front, up);
+    }
+};
+
 void draw_line(const vec2 &a, const vec2 &b, const vec2 &scale, const wchar_t &character = L'#', const color_t &color = FWHITE|BBLACK) {
     adv::line(a.x * scale.x, a.y * scale.y, b.x * scale.x, b.y * scale.y, character, color);
 }
@@ -171,8 +232,9 @@ void debug_text(Format format, const Args&... args) {
     adv::write(0, debug_y++, buf, BWHITE|FBLACK);
 }
 
-void draw_triangle(const vec2 &a, const vec2 &b, const vec2 &c) {
-    vec2 scale { adv::width, adv::height };
+template<typename callback_t>
+void draw_triangle_cb(const vec2 &a, const vec2 &b, const vec2 &c, callback_t callback) {
+    //vec2 scale { adv::width, adv::height };
 
     //draw_line(a, b, scale);
     //draw_line(b, c, scale);
@@ -180,7 +242,9 @@ void draw_triangle(const vec2 &a, const vec2 &b, const vec2 &c) {
 
     //draw_rectangle(vec2::min({a,b,c}), vec2::max({a,b,c}), scale);
 
-    vec2 A = a * scale, B = b * scale, C = c * scale;
+    //vec2 A = a * scale, B = b * scale, C = c * scale;
+
+    vec2 A = a, B = b, C = c;
 
     if (B.x < A.x) std::swap(A, B);
 
@@ -192,7 +256,7 @@ void draw_triangle(const vec2 &a, const vec2 &b, const vec2 &c) {
     //adv::write(B.x, B.y, 'B');
     //adv::write(C.x, C.y, 'C');
 
-    color_t color = rand() % 255;
+    //color_t color = rand() % 255;
 
     const float rAB = B.x - A.x;
     const float rBC = C.x - B.x;
@@ -211,8 +275,9 @@ void draw_triangle(const vec2 &a, const vec2 &b, const vec2 &c) {
 
         if (y0 > y1) std::swap(y0, y1);
 
-        for (int y = y0; y < y1; y++)
-            adv::write(x + A.x, y, 'x', color);
+        for (float y = y0; y < y1; y += 1)
+            //adv::write(x + A.x, y, 'x', color);
+            callback(x + A.x, y);
     }
 
     for (float x = 0.0; x < rBC; x += 1) {
@@ -224,14 +289,55 @@ void draw_triangle(const vec2 &a, const vec2 &b, const vec2 &c) {
 
         if (y0 > y1) std::swap(y0, y1);
 
-        for (int y = y0; y < y1; y++)
-            adv::write(x + B.x, y, 'x', color);
+        for (float y = y0; y < y1; y += 1)
+            //adv::write(x + B.x, y, 'x', color);
+            callback(x + B.x, y);
+    }
+}
+
+void px_callback(const color_t &color, const float &x, const float &y) {
+    if (adv::bound(x, y))
+        adv::write(x, y, 'x', color);
+}
+
+void draw_triangle(const vec2 &a, const vec2 &b, const vec2 &c) {
+    const color_t color = rand() % 255;
+    const vec2 scale = {adv::width, adv::height};
+
+    draw_triangle_cb(a * scale, b * scale, c * scale, [&](const float &x, const float &y) {
+        if (adv::bound(x, y))
+            adv::write(x, y, 'x', color);
+    });
+}
+
+void draw_triangle(const glm::vec3 &a, const glm::vec3 &b, const glm::vec3 &c) {
+    const color_t color = rand() % 255;
+    const vec2 scale = {adv::width, adv::height};
+
+    draw_triangle_cb(vec2{a.x, a.y} * scale, vec2{b.x, b.y} * scale, vec2{c.x, c.y} * scale, std::bind(px_callback, color, std::placeholders::_1, std::placeholders::_2));
+}
+
+void render(renderctx_t &ctx, mesh_t &mesh) {
+    const int tri_count = mesh.vert_count / 3;
+
+    for (int t = 0; t < tri_count; t++) {
+        const auto *tris = &mesh.verts[t * 3];
+        const auto t0 = tris[0].vertex, t1 = tris[1].vertex, t2 = tris[2].vertex;
+        draw_triangle(t0, t1, t2);
+
+        for (int v = 0; v < 3; v++) {}
     }
 }
 
 int main() {
     adv::setThreadState(false);
     adv::setThreadSafety(false);
+
+    mesh_t mesh;
+    mesh.load("cave.obj");
+
+    renderctx_t ctx(0, 0, 90, adv::width, adv::height, 0.1, 1000.0);
+    ctx.camera_matrix();
 
     int key = 0;
 
@@ -250,7 +356,8 @@ int main() {
 
         adv::clear();
 
-        draw_triangle(vec2::get_random(), vec2::get_random(), vec2::get_random());
+        //draw_triangle(vec2::get_random(), vec2::get_random(), vec2::get_random());
+        render(ctx, mesh);
 
         adv::draw();
 
