@@ -10,7 +10,6 @@ namespace Util {
     constexpr inline RT lerp(const T &a, const U &b, const V &factor) {
         return (a * (V(1.0) - factor)) + (b * (factor));
     }
-    
 }
 
 struct vec2 {
@@ -91,62 +90,58 @@ void debug_text(Format format, const Args&... args) {
 void draw_triangle(const vec2 &a, const vec2 &b, const vec2 &c) {
     vec2 scale { adv::width, adv::height };
 
-    draw_line(a, b, scale);
-    draw_line(b, c, scale);
-    draw_line(c, a, scale);
+    //draw_line(a, b, scale);
+    //draw_line(b, c, scale);
+    //draw_line(c, a, scale);
 
-    draw_rectangle(vec2::min({a,b,c}), vec2::max({a,b,c}), scale);
+    //draw_rectangle(vec2::min({a,b,c}), vec2::max({a,b,c}), scale);
 
     vec2 A = a * scale, B = b * scale, C = c * scale;
 
     if (B.x < A.x) std::swap(A, B);
 
-    if (A.x > C.x) std::swap(A, C);
+    if (C.x < A.x) std::swap(A, C);
 
     if (C.x < B.x) std::swap(B, C);
 
-    adv::write(A.x, A.y, 'A');
-    adv::write(B.x, B.y, 'B');
-    adv::write(C.x, C.y, 'C');
+    //adv::write(A.x, A.y, 'A');
+    //adv::write(B.x, B.y, 'B');
+    //adv::write(C.x, C.y, 'C');
 
-    const float rAB = 1.0f/(B.x - A.x);
-    const float rBC = 1.0f/(C.x - B.x);
-    const float rAC = 1.0f/(C.x - A.x);
+    color_t color = rand() % 255;
 
-    bool as=false,bs=false;
+    const float rAB = B.x - A.x;
+    const float rBC = C.x - B.x;
+    const float rAC = C.x - A.x;
 
-    for (int x = A.x; x < B.x; x++) {
-        const float factorAB = (x - int(A.x)) * rAB;
-        const float factorAC = (x - int(A.x)) * rAC;
+    const float iAB = 1.0f / rAB;
+    const float iBC = 1.0f / rBC;
+    const float iAC = 1.0f / rAC;
 
-        vec2 ab = A.lerp(B, factorAB);
-        vec2 ac = A.lerp(C, factorAC);
+    for (float x = 0.0; x < rAB; x += 1) {
+        const float fAB = x * iAB;
+        const float fAC = x * iAC;
 
-        float minY = ab.y, maxY = ac.y;
-        if (minY > maxY) std::swap(minY, maxY);
+        float y0 = Util::lerp(A.y, B.y, fAB);
+        float y1 = Util::lerp(A.y, C.y, fAC);
 
-        for (int y = minY; y < maxY; y++)
-            adv::write(x, y, 'x');
-    }
-
-    for (int x = B.x; x < C.x; x++) {
-        const float factorBC = (x - int(B.x)) * rBC;
-        const float factorAC = (x - int(A.x)) * rAC;
-
-        if (!bs) {
-            bs=true;
-            debug_text("%f", factorBC);
-            debug_text("%i %f / %f", x, B.x, rBC);
-        }
-
-        vec2 bc = B.lerp(C, factorBC);
-        vec2 ac = A.lerp(C, factorAC);
-
-        float y0 = bc.y, y1 = ac.y;
         if (y0 > y1) std::swap(y0, y1);
 
         for (int y = y0; y < y1; y++)
-            adv::write(x, y, 'z');
+            adv::write(x + A.x, y, 'x', color);
+    }
+
+    for (float x = 0.0; x < rBC; x += 1) {
+        const float fBC = x * iBC;
+        const float fAC = (x + rAB) * iAC;
+
+        float y0 = Util::lerp(B.y, C.y, fBC);
+        float y1 = Util::lerp(A.y, C.y, fAC);
+
+        if (y0 > y1) std::swap(y0, y1);
+
+        for (int y = y0; y < y1; y++)
+            adv::write(x + B.x, y, 'x', color);
     }
 }
 
@@ -167,7 +162,7 @@ int main() {
                 break;
         }
 
-        debug_y = 0;
+        //debug_y = 0;
 
         adv::clear();
 
