@@ -5,6 +5,8 @@
 #include <functional>
 
 #include "../console/advancedConsole.h"
+#include "../imgcat/colorMappingPalette.h"
+
 #include <math.h>
 #include <cmath>
 
@@ -100,6 +102,16 @@ struct vec2 {
     friend vec2 operator+(const vec2 &a, const vec2 &b) {
         return vec2 {a.x + b.x, a.y + b.y};
     }
+
+    /*
+    static vec2 operator()(const glm::vec2 &v) {
+        return vec2 {v.x, v.y};
+    }
+    */
+
+    vec2(){}
+    vec2(const float &x, const float &y):x(x),y(y){}
+    vec2(const glm::vec2 &v):vec2(v.x, v.y){}
 };
 
 struct vertex_t {
@@ -274,6 +286,8 @@ struct renderctx_t {
 
         yaw += factor * dx;
         pitch += factor * dy;
+
+        camera_matrix();
     }
 
     void keyboard(int key) {
@@ -385,6 +399,12 @@ void draw_triangle(const glm::vec3 &a, const glm::vec3 &b, const glm::vec3 &c) {
     draw_triangle_cb(vec2{a.x, a.y} * scale + shift, vec2{b.x, b.y} * scale + shift, vec2{c.x, c.y} * scale + shift, std::bind(px_callback, color, std::placeholders::_1, std::placeholders::_2));
 }
 
+void depth_char(const float &factor, wchar_t &character, color_t &color) {
+    color_t ins = factor * 255;
+    
+    colorMappingPalette(ins, ins, ins, &character, &color);
+}
+
 void render(renderctx_t &ctx, mesh_t &mesh) {
     ctx.camera_matrix();
     ctx.projection_matrix();
@@ -394,25 +414,33 @@ void render(renderctx_t &ctx, mesh_t &mesh) {
 
     const auto mvp = ctx.model * ctx.view * ctx.projection;
 
+    const vec2 scale { ctx.width, ctx.height };
+    const vec2 shift = scale * 0.5;
+
     for (int t = 0; t < tri_count; t++) {
         const auto *tris = &mesh.verts[t * 3];
 
         glm::vec4 ps[3];
+        vec2 vs[3];
+
         for (int v = 0; v < 3; v++) {
             const auto vert = tris[v].vertex;
             ps[v] = glm::vec4(vert, 1) * mvp;
             debug_text("%.1f %.1f %.1f", ps[v].x, ps[v].y, ps[v].z);
-            debug_text("%.1f %.1f %.1f", vert.x, vert.y, vert.z);
+            vs[v] = vec2(ps[v]) * scale + shift;
+            //debug_text("%.1f %.1f %.1f", vert.x, vert.y, vert.z);
         }
 
-        /*
-        debug_text("%.1f %.1f %.1f %.1f %.1f %.1f %.1f %.1f %.1f",
-            ps[0].x, ps[0].y, ps[0].z,
-            ps[1].x, ps[1].y, ps[1].z,
-            ps[2].x, ps[2].y, ps[2].z);
-        */
 
-        draw_triangle(ps[0], ps[1], ps[2]);
+        draw_triangle_cb(vs[0], vs[1], vs[2], [&](auto x, auto y) {
+            if (adv::bound(x,y) && ps[0].z > ctx.near && ps[0].z < ctx.far) {
+                wchar_t ch;color_t co;
+                float factor = (ps[0].z - ctx.near) / ctx.far;
+                depth_char(factor, ch, co);
+                adv::write(x, y, ch, co);
+                //adv::write(x, y);
+            }
+        });
 
         for (int v = 0; v < 3; v++) {}
     }
@@ -421,11 +449,12 @@ void render(renderctx_t &ctx, mesh_t &mesh) {
 int main() {
     adv::setThreadState(false);
     adv::setThreadSafety(false);
+    colorMappingPaletteInit();
 
     mesh_t mesh;
     mesh.load("cave.obj");
 
-    renderctx_t ctx(0, 0, 90, adv::width, adv::height, 0.1, 1000.0);
+    renderctx_t ctx(0, 0, 90, adv::width, adv::height, 0.1, 40.0);
     ctx.model = glm::mat4(1.);
 
     int key = 0;
