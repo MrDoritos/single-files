@@ -92,6 +92,14 @@ struct vec2 {
     friend vec2 operator*(const vec2 &a, const vec2 &b) {
         return vec2 {a.x * b.x, a.y * b.y};
     }
+
+    friend vec2 operator*(const vec2 &a, const float &b) {
+        return vec2 {a.x * b, a.y * b};
+    }
+
+    friend vec2 operator+(const vec2 &a, const vec2 &b) {
+        return vec2 {a.x + b.x, a.y + b.y};
+    }
 };
 
 struct vertex_t {
@@ -213,6 +221,65 @@ struct renderctx_t {
     void view_matrix() {
         view = glm::lookAt(position, position + front, up);
     }
+
+    void camera_move(int key) {
+        float factor = 1.0;
+        float dt = 1.0;
+
+        glm::vec3 front = this->front; front.y = 0;
+        glm::vec3 right = this->right; right.y = 0;
+        front = glm::normalize(front);
+        right = glm::normalize(right);
+
+        switch (key) {
+            case 'W':
+            case 'S':
+            case 'A':
+            case 'D':
+                factor = 2.0;
+            break;
+        }
+
+        switch (key) {
+            case 'W':
+            case 'w':
+                position += front * dt * factor;
+                break;
+            case 'S':
+            case 's':
+                position -= front * dt * factor;
+                break;
+            case 'A':
+            case 'a':
+                position -= right * dt * factor;
+                break;
+            case 'D':
+            case 'd':
+                position += right * dt * factor;
+                break;
+        }
+    }
+
+    void camera_pan(int key) {
+        float factor = 1.0;
+
+        float dx = 0, dy = 0;
+
+        switch (key) {
+            case 'i': dy = 1; break;
+            case 'k': dy = -1; break;
+            case 'j': dx = -1; break;
+            case 'l': dx = 1; break;
+        }
+
+        yaw += factor * dx;
+        pitch += factor * dy;
+    }
+
+    void keyboard(int key) {
+        camera_move(key);
+        camera_pan(key);
+    }
 };
 
 void draw_line(const vec2 &a, const vec2 &b, const vec2 &scale, const wchar_t &character = L'#', const color_t &color = FWHITE|BBLACK) {
@@ -313,17 +380,39 @@ void draw_triangle(const vec2 &a, const vec2 &b, const vec2 &c) {
 void draw_triangle(const glm::vec3 &a, const glm::vec3 &b, const glm::vec3 &c) {
     const color_t color = rand() % 255;
     const vec2 scale = {adv::width, adv::height};
+    const vec2 shift = scale * 0.5;
 
-    draw_triangle_cb(vec2{a.x, a.y} * scale, vec2{b.x, b.y} * scale, vec2{c.x, c.y} * scale, std::bind(px_callback, color, std::placeholders::_1, std::placeholders::_2));
+    draw_triangle_cb(vec2{a.x, a.y} * scale + shift, vec2{b.x, b.y} * scale + shift, vec2{c.x, c.y} * scale + shift, std::bind(px_callback, color, std::placeholders::_1, std::placeholders::_2));
 }
 
 void render(renderctx_t &ctx, mesh_t &mesh) {
+    ctx.camera_matrix();
+    ctx.projection_matrix();
+    ctx.view_matrix();
+
     const int tri_count = mesh.vert_count / 3;
+
+    const auto mvp = ctx.model * ctx.view * ctx.projection;
 
     for (int t = 0; t < tri_count; t++) {
         const auto *tris = &mesh.verts[t * 3];
-        const auto t0 = tris[0].vertex, t1 = tris[1].vertex, t2 = tris[2].vertex;
-        draw_triangle(t0, t1, t2);
+
+        glm::vec4 ps[3];
+        for (int v = 0; v < 3; v++) {
+            const auto vert = tris[v].vertex;
+            ps[v] = glm::vec4(vert, 1) * mvp;
+            debug_text("%.1f %.1f %.1f", ps[v].x, ps[v].y, ps[v].z);
+            debug_text("%.1f %.1f %.1f", vert.x, vert.y, vert.z);
+        }
+
+        /*
+        debug_text("%.1f %.1f %.1f %.1f %.1f %.1f %.1f %.1f %.1f",
+            ps[0].x, ps[0].y, ps[0].z,
+            ps[1].x, ps[1].y, ps[1].z,
+            ps[2].x, ps[2].y, ps[2].z);
+        */
+
+        draw_triangle(ps[0], ps[1], ps[2]);
 
         for (int v = 0; v < 3; v++) {}
     }
@@ -337,7 +426,7 @@ int main() {
     mesh.load("cave.obj");
 
     renderctx_t ctx(0, 0, 90, adv::width, adv::height, 0.1, 1000.0);
-    ctx.camera_matrix();
+    ctx.model = glm::mat4(1.);
 
     int key = 0;
 
@@ -349,10 +438,11 @@ int main() {
             case '\x1b':
                 goto end;
             default:
+                ctx.keyboard(key);
                 break;
         }
 
-        //debug_y = 0;
+        debug_y = 0;
 
         adv::clear();
 
