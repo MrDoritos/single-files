@@ -1,14 +1,8 @@
-/*
- *	Requires -std=c++2a
- *
- */
-
 #include <iostream>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string>
 #include <vector>
-#include <format>
 #include <tuple>
 
 bool op_and(bool a, bool b) {
@@ -27,6 +21,11 @@ std::string get_bar(const int &length) {
 	return std::string(length, '-');
 }
 
+template<typename T>
+int get_width(const T &pair) {
+	return pair.first.size() + 6;
+}
+
 using func = bool(bool,bool);
 
 int main() {
@@ -39,14 +38,10 @@ int main() {
 
 	int rows = 1 << props.size();
 
-	std::cout << std::format("   {}   |   {}   | {} {} {} | {} {} {}\n",
-		props[0], props[1], props[0], ops[0].first, props[1], props[0], ops[1].first, props[1]);
+	std::cout << "   " << props[0] << "   |   " << props[1] << "   | " << props[0] << " " << ops[0].first << " "
+		  << props[1] << " | " << props[0] << " " << ops[1].first << " " << props[1] << std::endl;
 
-	const auto get_width = [&](const auto &pair) {
-		return pair.first.size() + 6;
-	};
-
-	std::cout << std::format("{}|{}|{}|{}\n", get_bar(7), get_bar(7), get_bar(get_width(ops[0])), get_bar(get_width(ops[1])));
+	std::cout << get_bar(7) << "|" << get_bar(7) << "|" << get_bar(get_width(ops[0])) << "|" << get_bar(get_width(ops[1])) << std::endl;
 
 	bool vals[props.size()];
 
@@ -67,3 +62,4 @@ int main() {
 
 	return 0;
 }
+
