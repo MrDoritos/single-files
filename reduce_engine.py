@@ -205,14 +205,14 @@ class Log:
         vel_difference = rows[-1].columns[5] - rows[0].columns[5]
         return vel_difference / time_difference
 
-    def compute_acceleration_interpolated(self, time:float, time_width:float=0.1) -> float:
+    def compute_acceleration_interpolated(self, time:float, time_width:float=0.1, index:int=5) -> float:
         a = self.interpolate_row(time - time_width)
         b = self.interpolate_row(time + time_width)
 
         if not a or not b:
             return 0
 
-        return (b.columns[5] - a.columns[5]) / (b.time - a.time)
+        return (b.columns[index] - a.columns[index]) / (b.time - a.time)
 
     def get_csv_header(self):
         return ','.join(self.header)
@@ -223,8 +223,37 @@ class Log:
             ret += str(row) + "\n"
         return ret
     
-    def plot_fft(self, index:int):
-        pass
+    def plot_hist(self, sample_rate_hz:float):
+        min, max = log.get_time_minmax()
+
+        time = min
+        step = 1 / sample_rate_hz
+        samples = []
+
+        while (time < max):
+            #samples.append(self.compute_acceleration_interpolated(time, step, 0))
+            print(f'\r{time}', end='')
+            row = self.interpolate_row(time)
+            time += step
+            if (not row) or (row.columns[0] < 0.1):
+                continue
+            ratio = row.columns[5] / row.columns[0]
+
+            if ratio < 0.0001:
+                continue
+            samples.append(row.columns[5] / row.columns[0])
+
+        #N = len(samples)
+
+        #yf = fft(samples)
+        #xf = fftfreq(N, step)
+
+        plt.hist(samples, bins=500, color='skyblue')
+        plt.grid()
+        plt.xlabel('Speed / RPM')
+        plt.ylabel('Count')
+        plt.title('Histogram')
+        plt.show()
 
 if __name__ == "__main__":
     np.set_printoptions(suppress=True)
@@ -247,14 +276,17 @@ if __name__ == "__main__":
     #    row.columns.append(log.compute_acceleration(i))
     #    print(row.get_csv())
 
-    min, max = log.get_time_minmax()
-    time = min
-    step = 0.1
-    while (time < max):
-        row = log.interpolate_row(time)
-        if row:
-            #print(f"\r{time} / {max}", file=sys.stderr, end='')
-            #row2 = copy.deepcopy(row)
-            row.columns.append(log.compute_acceleration_interpolated(time, step))
-            print(row.get_csv())
-        time += step
+    
+    #min, max = log.get_time_minmax()
+    #time = min
+    #step = 0.1
+    #while (time < max):
+    #    row = log.interpolate_row(time)
+    #    if row:
+    #        #print(f"\r{time} / {max}", file=sys.stderr, end='')
+    #        #row2 = copy.deepcopy(row)
+    #        row.columns.append(log.compute_acceleration_interpolated(time, step))
+    #        print(row.get_csv())
+    #    time += step
+
+    log.plot_hist(100)
