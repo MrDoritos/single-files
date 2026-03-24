@@ -57,6 +57,7 @@ class Log:
         print(B)
 
         B[index] = np.nan
+        B[0] = np.nan
         #A = A[1:]
         np.delete(A, row, axis=0)
 
@@ -68,6 +69,8 @@ class Log:
         imputer = KNNImputer(n_neighbors=3)
 
         filled_data = imputer.fit_transform(combined_data)
+
+        print(filled_data[-1])
 
         return filled_data[-1][index]
 
