@@ -2,13 +2,19 @@
 
 import numpy as np
 from sklearn.impute import KNNImputer
+from scipy.fft import fft, fftfreq
+import matplotlib.pyplot as plt
 import csv
-import sys, os
+import sys, os, copy
+
+class Util:
+    def lerp(v1, v2, factor):
+        return v1 * (1 - factor) + v2 * factor
 
 class Row:
-    def __init__(self, time:float = 0, columns:list = []):
-        self.time = time
-        self.columns = columns
+    def __init__(self, time:float = None, columns:list = None):
+        self.time = time if time is not None else time
+        self.columns = columns if columns is not None else []
 
     def __repr__(self):
         return f"{self.time} {self.columns}"
@@ -17,6 +23,25 @@ class Row:
         v = [self.time]
         v.extend(self.columns)
         return ','.join(map(str, v))
+    
+    def get_factor(self, row, time:float) -> float:
+        return (time - self.time) / (row.time - self.time)
+
+    def interpolate(self, other, factor:float):
+        ret = Row(0, [])
+
+        ret.time = Util.lerp(self.time, other.time, factor)
+
+        for i in range(len(self.columns)):
+            ret.columns.append(
+                Util.lerp(
+                    self.columns[i], 
+                    other.columns[i], 
+                    factor
+                )
+            )
+
+        return ret
 
 class Log:
     def open(self, path):
@@ -96,7 +121,7 @@ class Log:
     def get_row(self, index:int) -> Row:
         return self.rows[index]
 
-    def binary_index(self, time:float, start:int, end:int, depth:int=0) -> int:
+    def binary_index_r(self, time:float, start:int, end:int, depth:int=0) -> int:
         range = end - start
 
         if range < 2: return start
@@ -105,12 +130,12 @@ class Log:
         middle = self.get_row(mid)
 
         if middle.time <= time:
-            return self.binary_index(time, mid, end, depth+1)
+            return self.binary_index_r(time, mid, end, depth+1)
         else:
-            return self.binary_index(time, start, mid, depth+1)
+            return self.binary_index_r(time, start, mid, depth+1)
 
     def binary_index(self, time:float) -> int:
-        return self.binary_index(time, 0, self.get_row_count())
+        return self.binary_index_r(time, 0, self.get_row_count())
     
     def binary_search(self, time:float) -> Row:
         return self.get_row(self.binary_index(time))
@@ -127,11 +152,67 @@ class Log:
     def get_rows(self, indicies:list[int]) -> list[Row]:
         return [self.rows[i] for i in indicies]
 
+    def time_pair_indicies(self, time:float):
+        i = self.binary_index(time)
+
+        if i < 1:
+            if self.get_row_count() < 1:
+                return None, None
+            return 0, 1
+        
+        if i >= self.get_row_count() - 1:
+            size = self.get_row_count()
+            return size - 2, size - 1
+        
+        return i, i+1
+    
+    def time_pair(self, time:float):
+        a, b = self.time_pair_indicies(time)
+
+        if not a or not b:
+            return None, None
+        
+        return self.get_row(a), self.get_row(b)
+    
+    def interpolate_row(self, time:float):
+        v1, v2 = self.time_pair(time)
+
+        if not v1 or not v2:
+            return None
+
+        factor = v1.get_factor(v2, time)
+
+        return v1.interpolate(v2, factor)
+    
+    def get_time_minmax(self):
+        min = max = self.get_row(0).time
+
+        for row in self.rows:
+            if min > row.time:
+                min = row.time
+            if max < row.time:
+                max = row.time
+
+        return min, max
+    
+    def get_time_range(self) -> float:
+        min, max = self.get_time_minmax()
+        return max - min
+
     def compute_acceleration(self, index:int) -> float:
         rows = self.get_rows(self.get_row_range_indicies(index))
         time_difference = rows[-1].time - rows[0].time
         vel_difference = rows[-1].columns[5] - rows[0].columns[5]
         return vel_difference / time_difference
+
+    def compute_acceleration_interpolated(self, time:float, time_width:float=0.1) -> float:
+        a = self.interpolate_row(time - time_width)
+        b = self.interpolate_row(time + time_width)
+
+        if not a or not b:
+            return 0
+
+        return (b.columns[5] - a.columns[5]) / (b.time - a.time)
 
     def get_csv_header(self):
         return ','.join(self.header)
@@ -141,6 +222,9 @@ class Log:
         for row in self.data:
             ret += str(row) + "\n"
         return ret
+    
+    def plot_fft(self, index:int):
+        pass
 
 if __name__ == "__main__":
     np.set_printoptions(suppress=True)
@@ -157,7 +241,20 @@ if __name__ == "__main__":
     #print(log.get_rows(log.get_row_count(), 2))
     #print(log.compute_acceleration(1659))
     print(log.get_csv_header())
-    for i in range(log.get_row_count()):
-        row = log.get_row(i)
-        row.columns.append(log.compute_acceleration(i))
-        print(row.get_csv())
+
+    #for i in range(log.get_row_count()):
+    #    row = log.get_row(i)
+    #    row.columns.append(log.compute_acceleration(i))
+    #    print(row.get_csv())
+
+    min, max = log.get_time_minmax()
+    time = min
+    step = 0.1
+    while (time < max):
+        row = log.interpolate_row(time)
+        if row:
+            #print(f"\r{time} / {max}", file=sys.stderr, end='')
+            #row2 = copy.deepcopy(row)
+            row.columns.append(log.compute_acceleration_interpolated(time, step))
+            print(row.get_csv())
+        time += step
