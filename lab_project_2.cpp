@@ -12,18 +12,19 @@ using vec = std::vector<dt>;
 using predicate_t = bool(*)(dt&,dt&);
 
 void get_domain(std::istream &s, vec &v) {
-	puts("Enter domain set in the form {0,1,...,n}");
+	puts("Enter domain of any real number in the form 0,1,...,n");
 
 	std::string in, token;
 
 	getline(s, in);
 
 	v.clear();
+	in += '\n';
 
 	for (auto &ch:in) {
 		switch (ch) {
 			case ',':
-			case '}':
+			case '\n':
 				dt conv;
 				if (sscanf(token.c_str(), "%f", &conv) != 1) {
 					puts("User input error");
@@ -31,8 +32,6 @@ void get_domain(std::istream &s, vec &v) {
 					v.push_back(conv);
 				}
 				token.clear();
-				break;
-			case '{': 
 				break;
 			default:
 				token.push_back(ch);
@@ -42,7 +41,7 @@ void get_domain(std::istream &s, vec &v) {
 }
 
 void get_test_element(std::istream &s, dt &v) {
-	puts("Enter test element");
+	puts("Enter test element of any real number");
 
 	s >> v;
 }
@@ -110,7 +109,7 @@ int main() {
 
 	};
 
-	auto &pred = predicates[2];
+	auto &pred = predicates[0];
 
 	std::cout << "Predicate: " << std::get<1>(pred) << std::endl;
 
