@@ -7,9 +7,21 @@ import matplotlib.pyplot as plt
 import csv
 import sys, os, copy
 
+RATIOS = [
+    0.00780,
+    0.01387,
+    0.01999,
+    0.02698,
+    0.03428,
+    0.04148
+]
+
 class Util:
     def lerp(v1, v2, factor):
         return v1 * (1 - factor) + v2 * factor
+
+    def is_same_num(num:float, test:float, eps:float=0.1):
+        return abs(num - test) < eps
 
 class Row:
     def __init__(self, time:float = None, columns:list = None):
@@ -17,7 +29,7 @@ class Row:
         self.columns = columns if columns is not None else []
 
     def __repr__(self):
-        return f"{self.time} {self.columns}"
+        return f"{self.time:4.2f}   {'   '.join(map(lambda x: f'{x: 8f}', self.columns))}"
     
     def get_csv(self):
         v = [self.time]
@@ -214,6 +226,25 @@ class Log:
 
         return (b.columns[index] - a.columns[index]) / (b.time - a.time)
 
+    def compute_speed_rpm_ratio(self, row:Row) -> float:
+        speed = row.columns[5]
+        rpm = row.columns[0]
+
+        if rpm < 0.1: return 0
+        
+        ratio = speed / rpm
+
+        if ratio < 0.0001: return 0
+        
+        return ratio
+    
+    def compute_gear(self, ratio) -> int:
+        for i in range(len(RATIOS)):
+            if Util.is_same_num(RATIOS[i], ratio, 0.001):
+                return i + 1
+            
+        return 0
+
     def get_csv_header(self):
         return ','.join(self.header)
 
@@ -277,16 +308,24 @@ if __name__ == "__main__":
     #    print(row.get_csv())
 
     
-    #min, max = log.get_time_minmax()
-    #time = min
-    #step = 0.1
-    #while (time < max):
-    #    row = log.interpolate_row(time)
-    #    if row:
-    #        #print(f"\r{time} / {max}", file=sys.stderr, end='')
-    #        #row2 = copy.deepcopy(row)
-    #        row.columns.append(log.compute_acceleration_interpolated(time, step))
-    #        print(row.get_csv())
-    #    time += step
+    min, max = log.get_time_minmax()
+    time = 410#min
+    max = 417
+    step = 0.05
+    while (time < max):
+        row = log.interpolate_row(time)
+        if row:
+            #print(f"\r{time} / {max}", file=sys.stderr, end='')
+            #row2 = copy.deepcopy(row)
+            row.columns.pop()
+            row.columns.append(log.compute_acceleration_interpolated(time, step))
+            ratio = log.compute_speed_rpm_ratio(row)
+            row.columns.append(ratio)
+            gear = log.compute_gear(ratio)
+            row.columns.append(gear)
+            row.columns.append(RATIOS[gear-1] * row.columns[0] if gear > 0 else row.columns[0] * ratio)
+            #print(row.get_csv())
+            print(row)
+        time += step
 
-    log.plot_hist(100)
+    #log.plot_hist(100)
