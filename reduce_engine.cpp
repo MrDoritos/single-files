@@ -137,6 +137,19 @@ struct PointT {
         value(value)
     {}
 
+    float get_factor(const PointT &other, const float &time) {
+        return (time - this->time) / (other.time - this->time);
+    }
+
+    PointT interpolate(const PointT &other, const float &factor) {
+        PointT ret;
+
+        ret.time = Util::lerp(this->time, other.time, factor);
+        ret.value = Util::lerp(this->value, other.value, factor);
+
+        return ret;
+    }
+
     friend std::ostream &operator<<(std::ostream &s, const PointT &p) {
         s << p.time << " " << p.value << ", ";
         return s;
@@ -172,6 +185,102 @@ struct ColumnT : public ColId {
         name(name)
     {}
 
+    int binary_index(const time_type &time, const int &start, const int &end, const int &depth=0) const {
+        const int range = end - start;
+
+        if (range < 2)
+            return start;
+        
+        const int mid = start + (range / 2);
+        const auto &middle = rows[mid];
+
+        if (middle.time <= time)
+            return binary_index(time, mid, end, depth + 1);
+        else
+            return binary_index(time, start, mid, depth + 1);
+    }
+
+    int binary_index(const time_type &time) const {
+        return binary_index(time, 0, get_row_count());
+    }
+
+    const int get_row_count() const {
+        return rows.size();
+    }
+
+    const bool indexed_pair(const int &index, int &v1, int &v2) const {
+        if (index < 1) {
+            if (get_row_count() < 1)
+                return false;
+            v1 = 0;
+            v2 = 1;
+            return true;   
+        }
+
+        if (index >= get_row_count() - 1) {
+            const int size = get_row_count();
+            v1 = size - 2;
+            v2 = size - 1;
+            return true;
+        }
+
+        v1 = index;
+        v2 = index + 1;
+        return true;
+    }
+
+    const bool indexed_pair(const int &index, point_type &v1, point_type &v2) const {
+        int a, b;
+
+        if (!indexed_pair(index, a, b))
+            return false;
+
+        v1 = rows[a];
+        v2 = rows[b];
+
+        return true;
+    }
+
+    const bool time_pair(const time_type &time, int &v1, int &v2) const {
+        const int i = binary_index(time);
+        return indexed_pair(i, v1, v2);
+    }
+
+    const bool time_pair(const time_type &time, point_type &v1, point_type &v2) const {
+        int a, b;
+
+        if (!time_pair(time, a, b))
+            return false;
+        
+        v1 = rows[a];
+        v2 = rows[b];
+        return true;
+    }
+
+    point_type interpolate_row(const time_type &time) {
+        point_type v1, v2;
+
+        if (!time_pair(time, v1, v2))
+            return point_type();
+
+        const float factor = v1.get_factor(v2, time);
+
+        return v1.interpolate(v2, factor);
+    }
+
+    value_type differentiate_interpolated(const time_type &time, const time_type &time_width = 0.1) {
+        const auto v1 = interpolate_row(time - time_width);
+        const auto v2 = interpolate_row(time + time_width);
+        
+        return (v2.value - v1.value) / (v2.time - v1.time);
+    }
+
+    value_type differentiate(const int &index, const int &index_width = 1) {
+        point_type v1, v2;
+
+        
+    }
+
     std::string to_string() const {
         return std::format("{} {}", ColId::to_string(), name);
     }
@@ -191,8 +300,10 @@ struct LogT {
     std::vector<Column> columns;
     using value_type = Column::value_type;
     using point_type = Column::point_type;
+    using time_type = Column::time_type;
 
     void add_column(const Column &column) {
+        column.rows.resize(get_height());
         columns.push_back(column);
     }
 
@@ -214,6 +325,17 @@ struct LogT {
         return ret;
     }
 
+    std::vector<point_type> interpolate_row(const time_type &time) {
+        std::vector<point_type> ret;
+        const auto w = get_width();
+        ret.reserve(w);
+
+        for (int col = 0; col < w; col++)
+            ret.push_back(columns[col].interpolate_row(time));
+        
+        return ret;
+    }
+
     size_t get_width() const {
         return columns.size();
     }
@@ -224,6 +346,14 @@ struct LogT {
 
     point_type get_value(const ColId &col_id, const int &row) {
         return get_column(col_id)->row;
+    }
+
+    void get_time_minmax(time_type &min, time_type &max) {
+        if (get_height() < 1)
+            return;
+        
+        min = columns[0].rows.front().time;
+        max = columns[0].rows.back().time;
     }
 
     size_t get_height() const {
@@ -326,11 +456,21 @@ int main(int argc, char **argv) {
     CSV csv(argv[1]);
     log.parse(csv);
 
+    /*
     for (int row = 0; row < log.get_height(); row++) {
         auto v = log.get_row(row);
         std::cout << row << ": ";
         std::cout << v;
         std::cout << std::endl;
+    }
+    */
+
+    Log::time_type min, max;
+    log.get_time_minmax(min, max);
+
+    for (Log::time_type s = min; s < max; s += 1.0) {
+        auto v = log.interpolate_row(s);
+        std::cout << v << std::endl;
     }
 
     for (int col = 0; col < log.get_width(); col++) {
