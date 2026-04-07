@@ -4,9 +4,29 @@
 #include <inttypes.h>
 #include <cmath>
 
+using color_t = uint8_t;
+
+namespace Util {
+    template<typename T>
+    T clamp(const T &val, const T &min, const T &max) {
+        if (val < min)
+            return min;
+        if (val > max)
+            return max;
+        return val;
+    }
+
+    template<typename T>
+    T wrap(T val, const T &max) {
+        while (val > max)
+            val -= max;
+        return val;
+    }
+}
+
 struct CharColor {
     char character;
-    char color;
+    color_t color;
 };
 
 template<typename T>
@@ -94,6 +114,8 @@ struct TileInstance {
 struct TileBase {
     tile_id id;
     const char *name;
+    std::vector<CharColor> textures;
+    float animation_speed;
     /*
         We can have preset values for hp, state, lighting
     */
@@ -102,8 +124,12 @@ struct TileBase {
         We can immediately add a tile to the registry
         after construction if desired
     */
-    TileBase(const char *name):
-        name(name) 
+    TileBase(const char *name, 
+             const std::vector<CharColor> &textures, 
+             const float &animation_speed=0):
+        name(name),
+        textures(textures),
+        animation_speed(animation_speed)
     {}
 
     /*
@@ -118,17 +144,47 @@ struct TileBase {
             .state = 0,
         };
     }
+
+    /*
+        To-Do color and fog processing
+        FTXUI supports RGB?
+    */
+    CharColor getSpriteData(const TileInstance &inst, const posi &pos) const {
+        const auto state = inst.state;
+        if (state == 0)
+            return textures[0];
+        return textures[Util::wrap<uint8_t>(state, textures.size())];
+    }
 };
 
 struct TileDirt : public TileBase {
+    CharColor DIRT_TEXTURE{'$', 3};
+
     TileDirt():
-        TileBase("Dirt")
+        TileBase("Dirt", {DIRT_TEXTURE})
     {}
 };
 
 struct TileStone : public TileBase {
     TileStone():
-        TileBase("Stone")
+        TileBase("Stone", {{'@', 1}})
+    {}
+};
+
+struct TileWater : public TileBase {
+    std::vector<CharColor> WATER_ANIMATION =
+    {
+        {'W', 4},
+        {'W', 5},
+        {'M', 9},
+        {'M', 4},
+        {'M', 5},
+        {'N', 10},
+        {'M', 5}
+    };
+
+    TileWater():
+        TileBase("Water", WATER_ANIMATION)
     {}
 };
 
@@ -219,7 +275,7 @@ void printTile(TileBase *tile) {
 int main() {
     TileDirt dirt;
     TileStone stone;
-    TileBase brick("Brick");
+    TileBase brick("Brick", {{'#', 2}});
 
     registry.tiles.add(dirt);
     registry.tiles.add(stone);
