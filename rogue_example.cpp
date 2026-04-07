@@ -37,9 +37,9 @@ struct Vec2T {
 
 template<typename T> using PosT = Vec2T<T>;
 
-template<typename T, typename P = PosT<T>>
+template<typename T, typename POS = PosT<T>>
 struct SizeT {
-    using pos = P;
+    using position_type = POS;
 
     union {
         Vec2T<T> vec;
@@ -52,7 +52,7 @@ struct SizeT {
         return width * height;
     }
 
-    T index(const pos &p) const {
+    T index(const position_type &p) const {
         return width * p.y + p.x;
     }
 };
