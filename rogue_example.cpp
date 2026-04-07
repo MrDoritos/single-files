@@ -113,24 +113,30 @@ struct TileStone : public TileBase {
 template<typename T, typename V = std::vector<T*>>
 struct RegistryT : public V {
     using id_type = decltype(T::id);
-    using V::operator[];
+    V elements;
 
     id_type nextId = 0;
 
-    /*
-        I am resizing the vector based on id because a tile could
-        be removed in the future, but still be present
-        in a saved game, causing an unwanted id mismatch
-
-        In the future this could be improved by having ids
-        be assigned upon creating the registry, but tiles having
-        a string tag in the save file
-    */
     T *add(T *tile) {
         tile->id = nextId++;
-        this->resize(nextId);
-        this->at(tile->id) = tile;
+        elements.push_back(tile);
         
+        return tile;
+    }
+
+    T *insertAt(T *tile, const id_type &id) {
+        tile->id = id;
+
+        if (id >= elements.size()) {
+            elements.resize(id + 1, nullptr);
+        }
+
+        elements[id] = tile;
+
+        if (id >= nextId) {
+            nextId = id + 1;
+        }
+
         return tile;
     }
 
@@ -139,7 +145,11 @@ struct RegistryT : public V {
     }
 
     T *get(const id_type &id) {
-        return this->at(id);
+        return elements.at(id);
+    }
+
+    T *operator[](const id_type &id) {
+        return get(id);
     }
 };
 
