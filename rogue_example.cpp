@@ -8,15 +8,22 @@ struct CharColor {
 };
 
 template<typename T>
-struct PosT {
+struct Vec2T {
     T x, y;
 };
+
+template<typename T> using PosT = Vec2T<T>;
 
 template<typename T, typename P = PosT<T>>
 struct SizeT {
     using pos = P;
 
-    T width, height;
+    union {
+        Vec2T<T> vec;
+        struct { 
+            T width, height; 
+        };
+    };
 
     T area() const {
         return width * height;
@@ -27,10 +34,24 @@ struct SizeT {
     }
 };
 
-template<typename SIZE, typename POS>
-struct RectT : public SIZE, public POS {
-    using pos = POS;
-    using size = SIZE;
+template<typename T, typename SIZE = SizeT<T>, typename POS = PosT<T>>
+struct RectT {
+    using position_type = POS;
+    using size_type = SIZE;
+
+    union {
+        position_type pos;
+        struct {
+            T x, y;
+        };
+    };
+
+    union {
+        size_type size;
+        struct {
+            T width, height;
+        };      
+    };
 };
 
 using sizei = SizeT<int>;
@@ -95,6 +116,15 @@ struct RegistryT : public V {
 
     id_type nextId = 0;
 
+    /*
+        I am resizing the vector based on id because a tile could
+        be removed in the future, but still be present
+        in a saved game, causing an unwanted id mismatch
+
+        In the future this could be improved by having ids
+        be assigned upon creating the registry, but tiles having
+        a string tag in the save file
+    */
     T *add(T *tile) {
         tile->id = nextId++;
         this->resize(nextId);
@@ -116,13 +146,14 @@ struct Registry {
     RegistryT<TileBase> tiles;
 } registry;
 
-struct Map : public sizei {
+struct Map {
+    const sizei size;
     TileInstance *tiles;
 
     Map(const sizei &size):
-        sizei(size) 
+        size(size) 
     {
-        tiles = new TileInstance[this->area()];
+        tiles = new TileInstance[size.area()];
     }
 
     ~Map() {
@@ -130,7 +161,7 @@ struct Map : public sizei {
     }
 
     TileInstance &get(const posi &pos) {
-        return tiles[this->index(pos)];
+        return tiles[size.index(pos)];
     }
 
     TileInstance &get(const int &index) {
@@ -143,7 +174,7 @@ struct Map : public sizei {
     }
 
     void setMap(const TileInstance &inst) {
-        for (int i = 0; i < this->area(); i++)
+        for (int i = 0; i < size.area(); i++)
             get(i) = inst;
     }
 };
