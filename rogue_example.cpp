@@ -1,6 +1,7 @@
 #include <vector>
 #include <string>
 #include <iostream>
+#include <inttypes.h>
 
 struct CharColor {
     char character;
@@ -62,10 +63,10 @@ using tile_id = short;
 
 struct TileInstance {
     tile_id id;
-    char fog:4;
-    char light:4;
-    char hp:4;
-    char state:4;
+    uint8_t fog:4;
+    uint8_t light:4;
+    uint8_t hp:4;
+    uint8_t state:4;
 };
 
 struct TileBase {
