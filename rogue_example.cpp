@@ -54,8 +54,36 @@ struct Vec2T {
         return std::sqrt(distanceToSq(other));
     }
 
+    Vec2T operator+(const Vec2T &other) const {
+        return { x + other.x, y + other.y };
+    }
+
     Vec2T operator-(const Vec2T &other) const {
         return { x - other.x, y - other.y };
+    }
+
+    Vec2T operator*(const Vec2T &other) const {
+        return { x * other.x, y * other.y };
+    }
+
+    Vec2T operator/(const Vec2T &other) const {
+        return { x / other.x, y / other.y };
+    }
+
+    Vec2T operator+(const T &addend) const {
+        return { x + addend, y + addend };
+    }
+
+    Vec2T operator-(const T &subtractend) const {
+        return { x - subtractend, y - subtractend };
+    }
+
+    Vec2T operator*(const T &scalar) const {
+        return { x * scalar, y * scalar};
+    }
+
+    Vec2T operator/(const T &divisor) const {
+        return { x / divisor, y / divisor };
     }
 };
 
@@ -68,7 +96,7 @@ struct SizeT {
     union {
         Vec2T<T> vec;
         struct { 
-            T width, height; 
+            T width, height;
         };
     };
 
@@ -79,6 +107,19 @@ struct SizeT {
     T index(const position_type &p) const {
         return width * p.y + p.x;
     }
+
+    explicit operator position_type() const {
+        return position_type { width, height };
+    }
+
+    SizeT(const T &width, const T &height):
+        width(width),
+        height(height)
+    {}
+
+    SizeT(const position_type &pos):
+        SizeT(pos.x, pos.y)
+    {}
 };
 
 template<typename T, typename SIZE = SizeT<T>, typename POS = PosT<T>>
@@ -94,11 +135,38 @@ struct RectT {
     };
 
     union {
-        size_type size;
+        position_type size;
         struct {
             T width, height;
         };      
     };
+
+    T left() const { return x; }
+
+    T top() const { return y + height; }
+
+    T right() const { return x + width; }
+
+    T bottom() const { return y; }
+
+    bool intersect(const RectT &other) {
+        return left() <= other.right() &&
+               right() >= other.left() &&
+               bottom() <= other.top() &&
+               top() >= other.bottom();
+    }
+
+    position_type center() {
+        return pos + (size * 0.5);
+    }
+
+    explicit operator size_type() const {
+        return size;
+    }
+
+    T area() const {
+        return size_type(size).area();
+    }
 };
 
 using sizei = SizeT<int>;
