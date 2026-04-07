@@ -2,6 +2,7 @@
 #include <string>
 #include <iostream>
 #include <inttypes.h>
+#include <cmath>
 
 struct CharColor {
     char character;
@@ -11,6 +12,27 @@ struct CharColor {
 template<typename T>
 struct Vec2T {
     T x, y;
+
+    T magnitude() const {
+        return std::sqrt(magnitudeSq());
+    }
+
+    T magnitudeSq() const {
+        return (x * x) + (y * y);
+    }
+
+    T distanceToSq(const Vec2T &other) const {
+        Vec2T diff = this->operator-(other);
+        return diff.magnitudeSq();
+    }
+
+    T distanceTo(const Vec2T &other) const {
+        return std::sqrt(distanceToSq(other));
+    }
+
+    Vec2T operator-(const Vec2T &other) const {
+        return { x - other.x, y - other.y };
+    }
 };
 
 template<typename T> using PosT = Vec2T<T>;
