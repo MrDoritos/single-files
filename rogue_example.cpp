@@ -87,14 +87,12 @@ struct Vec2T {
     }
 };
 
-template<typename T> using PosT = Vec2T<T>;
-
-template<typename T, typename POS = PosT<T>>
+template<typename T>
 struct SizeT {
-    using position_type = POS;
+    using vector_type = Vec2T<T>;
 
     union {
-        Vec2T<T> vec;
+        vector_type vec;
         struct { 
             T width, height;
         };
@@ -104,12 +102,12 @@ struct SizeT {
         return width * height;
     }
 
-    T index(const position_type &p) const {
+    T index(const vector_type &p) const {
         return width * p.y + p.x;
     }
 
-    explicit operator position_type() const {
-        return position_type { width, height };
+    explicit operator vector_type() const {
+        return vector_type { width, height };
     }
 
     SizeT(const T &width, const T &height):
@@ -117,25 +115,25 @@ struct SizeT {
         height(height)
     {}
 
-    SizeT(const position_type &pos):
+    SizeT(const vector_type &pos):
         SizeT(pos.x, pos.y)
     {}
 };
 
-template<typename T, typename SIZE = SizeT<T>, typename POS = PosT<T>>
+template<typename T>
 struct RectT {
-    using position_type = POS;
-    using size_type = SIZE;
+    using size_type = SizeT<T>;
+    using vector_type = Vec2T<T>;
 
     union {
-        position_type pos;
+        vector_type pos;
         struct {
             T x, y;
         };
     };
 
     union {
-        position_type size;
+        vector_type size;
         struct {
             T width, height;
         };      
@@ -156,7 +154,7 @@ struct RectT {
                top() >= other.bottom();
     }
 
-    position_type center() {
+    vector_type center() {
         return pos + (size * 0.5);
     }
 
@@ -170,8 +168,8 @@ struct RectT {
 };
 
 using sizei = SizeT<int>;
-using posi = PosT<int>;
-using recti = RectT<sizei, posi>;
+using veci = Vec2T<int>;
+using recti = RectT<int>;
 
 using tile_id = short;
 
@@ -221,7 +219,7 @@ struct TileBase {
         To-Do color and fog processing
         FTXUI supports RGB?
     */
-    CharColor getSpriteData(const TileInstance &inst, const posi &pos) const {
+    CharColor getSpriteData(const TileInstance &inst, const veci &pos) const {
         const auto state = inst.state;
         if (state == 0)
             return textures[0];
@@ -321,7 +319,7 @@ struct Map {
         delete [] tiles;
     }
 
-    TileInstance &get(const posi &pos) {
+    TileInstance &get(const veci &pos) {
         return tiles[size.index(pos)];
     }
 
@@ -329,7 +327,7 @@ struct Map {
         return tiles[index];
     }
 
-    TileBase *getTile(const posi &pos) {
+    TileBase *getTile(const veci &pos) {
         const auto &tile = this->get(pos);
         return registry.tiles[tile.id];   
     }
