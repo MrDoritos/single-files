@@ -24,6 +24,10 @@ namespace Util {
     }
 }
 
+/*
+    Change to FTXUI type and modify references
+    Or find compatible type to cast to for rendering
+*/
 struct CharColor {
     char character;
     color_t color;
