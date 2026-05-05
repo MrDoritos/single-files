@@ -1,0 +1,34 @@
+shader hybrid_camera(
+    float focal_length = 50.0,
+    float ortho_scale = 1.0,
+    output point position = 0.0,
+    output vector direction = 0.0,
+    output color throughput = 1.0
+)
+{
+    // 1. Get sensor dimensions from the renderer
+    vector sensor_size = 1.0;
+    getattribute("camera:sensor_size", sensor_size);
+
+    // 2. Map u and v from [0, 1] to [-1, 1] range
+    float u_coord = u * 2.0 - 1.0;
+    float v_coord = v * 2.0 - 1.0;
+
+    // 3. Orthographic Logic (X-axis)
+    // The ray origin must move horizontally with u_coord.
+    // We multiply by ortho_scale to control the width of the view.
+    float x_pos = u_coord * (sensor_size[0] * 0.5) * ortho_scale;
+    position = point(x_pos, 0.0, 0.0);
+
+    // 4. Perspective Logic (Y-axis)
+    // The ray direction must tilt based on v_coord.
+    // The Y component of the vector creates the vanishing point.
+    float y_tilt = v_coord * (sensor_size[1] / focal_length);
+    
+    // Direction: X is 0 (straight forward), Y tilts, Z is depth (1.0)
+    direction = vector(0.0, y_tilt, 1.0);
+
+    // 5. Finalize
+    direction = normalize(direction);
+    throughput = color(1.0);
+}
