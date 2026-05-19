@@ -22,24 +22,26 @@ int main() {
    auto fit = line.begin();
    auto eit = line.rbegin();
 
-   for (;fit!=line.end();fit++,eit++) {
-      if (!isalpha(*fit)) {
-         fit++;
-         if (fit == line.end()) break;
+   auto advalpha = [&](auto &it, const auto &it_end) {
+      while (it != it_end) {
+         if (isalpha(*it))
+            return true;
+         it++;
       }
-      if (!isalpha(*eit)) {
-         eit++;
-         if (eit == line.rend()) break;
-      }
-      cout << *fit << ":" << *eit << endl;
+      return false;
+   };
+
+   for (;fit!=line.end()&&eit!=line.rend();fit++,eit++) {
+      if (!advalpha(fit,line.end())) break;
+      if (!advalpha(eit,line.rend())) break;
       if (tolower(*fit) != tolower(*eit)) {
          result = false;
       }
    }
    
    cout << (result ? "Yes" : "No") 
-        << ", \"" << line << "\" is " 
-        << (result ? "" : "not") 
+        << ", \"" << line << "\" is" 
+        << (result ? "" : " not") 
         << " a palindrome." << endl;
 
    return 0;
