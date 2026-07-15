@@ -1,0 +1,74 @@
+#set syntax = strict;
+
+param unitType = @poly;
+
+guarded linked target = container1, itemType = unloader1;
+
+begin
+    message("Initializing");
+
+    // Find an unused unit
+    do
+        ubind(unitType);
+    while @unit.@controlled != 0;
+
+    flag(90);
+    var capacity = @unit.@itemCapacity;
+
+    // Locate core
+    var core;
+    do
+        core = ulocate(:building, :core, false);
+    while core == null;
+
+    // This loops runs forever until the unit is lost
+    loop
+        message("Moving to core");
+        moveTo(core);
+
+        message("Taking items");
+        do
+            var item = itemType.@config;
+            // If the unit carries incompatible items, drop them
+            if @unit.@firstItem != null and @unit.@firstItem != item then
+                message("Incorrect item");
+                itemDrop(@air, capacity);
+            end;
+            itemTake(core, item, capacity);
+            checkUnit();
+        while @unit.@totalItems != capacity;
+
+        message("Moving to container");
+        moveTo(target);
+
+        // Drop to container. If the container is full, wait until it is possible to
+        message("Dropping items");
+        do
+            itemDrop(target, capacity);
+            checkUnit();
+        while @unit.@totalItems > 0;
+    end;
+end;
+
+// Moves the unit to within 5 tiles from the building, waits till it gets there
+void moveTo(building)
+    var x = building.@x;
+    var y = building.@y;
+    do
+        approach(x, y, 3);
+        checkUnit();
+    while !within(x, y, 5);
+end;
+
+// Restarts the entire program if unit is lost
+void checkUnit()
+    if @unit.@dead != 0 or @unit.@controller != @this then
+        end();
+    end;
+end;
+
+void message(text)
+    print(text);
+    printflush(message1);
+end;
+
