@@ -1,0 +1,29 @@
+# Type your code here.
+# Do not initialize $t0 and $t1 here. 
+# Use the + button under the Register display to initialize $t0 and $t1.
+addi $t3,$zero,0
+sw $t3,0($t1)
+addi $t3,$t3,1
+sw $t3,4($t1)
+addi $t0,$t0,-3
+# t3 : value
+# t2 : address offset
+# t4 : iterator
+# t5 : 4 / value 1
+# t6 : value 2
+L1:
+bgt $t4,$t0,L2
+addi $t5,$zero,4
+mul $t2,$t4,$t5
+add $t2,$t2,$t1
+lw $t5,0($t2)
+addi $t2,$t2,4
+lw $t6,0($t2)
+add $t3,$t5,$t6
+addi $t2,$t2,4
+sw $t3,0($t2)
+
+addi $t4,$t4,1
+j L1
+L2:
+
